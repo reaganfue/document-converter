@@ -1,0 +1,15 @@
+/* 自訂 QSS 樣式表 — Round 2 widgets-2 代理可在此加入客製樣式。
+ *
+ * QFluentWidgets 已提供主體 Fluent Design 樣式，
+ * 此檔案僅用於覆蓋或補充特定元件的細節。
+ *
+ * 品牌色：#8B5CF6（紫）
+ * 字體：Segoe UI Variable, 微軟正黑體
+ *
+ * 使用方式（Round 3 整合時在 main.py 載入）：
+ *   app.setStyleSheet(open("desktop/resources/styles.qss").read())
+ */
+
+/* TODO(Round 2 / widgets-2): 加入 DropZone 三種狀態的 QSS 樣式 */
+/* TODO(Round 2 / widgets-2): 加入 FileCard 卡片樣式 */
+/* TODO(Round 3): 載入此 QSS 並套用至 app */

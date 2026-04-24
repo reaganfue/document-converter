@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- 圓角背景 -->
+  <rect width="256" height="256" rx="40" fill="#8B5CF6"/>
+  <!-- 文件主體 -->
+  <path d="M76 56h76l48 48v96a16 16 0 0 1-16 16H76a16 16 0 0 1-16-16V72a16 16 0 0 1 16-16z" fill="#ffffff" opacity="0.95"/>
+  <!-- 文件折角 -->
+  <path d="M152 56v48h48" fill="none" stroke="#8B5CF6" stroke-width="6" stroke-linejoin="round"/>
+  <!-- 轉換勾選符號（代表成功轉換） -->
+  <path d="M96 156l24 24 40-40" fill="none" stroke="#8B5CF6" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

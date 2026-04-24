@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Runtime directories (created on app start)
+uploads/
+outputs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Dependency install marker (created by start.bat after first install)
+.deps_installed
+venv/.deps_installed
+
+# Testing artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+*.cover
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# CEO system state — not part of source code
+.execution/
+
+# Claude Code agent memory — private AI assistant state
+.claude/
+
+# Offline install wheel cache
+wheels/
+
+# Logs
+*.log
+server.log
+
+# Temporary files
+*.tmp
+*.bak

@@ -1,0 +1,25 @@
+文件轉檔工具 — 測試純文字檔案
+Document Conversion Tool — Sample Plain Text File
+
+第一段：中文說明
+本工具支援多種文件格式之間的轉換，包括 PDF、Word、PowerPoint、HTML、Markdown 等格式。
+所有轉換在本機執行，無需連接網路，保護您的隱私安全。
+
+Second Paragraph: English Description
+This tool supports conversions between multiple document formats including PDF, Word,
+PowerPoint, HTML, Markdown, and plain text. All conversions run locally on your machine
+without requiring network access, protecting your privacy.
+
+第三段：功能特點
+1. 支援 7 種格式互轉
+2. 雙引擎架構（首選 + 降級）
+3. 批次轉換支援
+4. 美觀的使用者介面
+
+Third Paragraph: Key Features
+- No watermarks or usage limits
+- Completely offline operation
+- Modern drag-and-drop interface
+- Automatic format detection
+
+結尾 / End of File

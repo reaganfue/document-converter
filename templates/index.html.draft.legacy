@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+<!--
+  W-CONV 文件轉檔工具 — HTML 骨架草稿
+  ======================================
+  產出者：ui-designer (W-CONV-P1.5A)
+  下游：implementer P2C
+
+  說明：
+  - 此檔案可直接在瀏覽器開啟查看靜態視覺效果（無功能）
+  - Alpine.js 互動邏輯由 implementer P2C 實作
+  - 所有 [Alpine.js 接管] 的區塊需要由 P2C 加入 x-data / x-show / x-bind 等指令
+  - 所有 SVG 圖示已 inline 嵌入，無外部依賴
+  - 字體使用系統字體，無外部字體 CDN
+
+  檔案對應關係：
+  - 最終實作檔：templates/index.html
+  - 樣式代幣：static/css/design-tokens.css
+  - Tailwind：static/css/vendor/tailwind.min.css（由 P2D 安裝）
+  - 自訂樣式：static/css/app.css（由 P2C 建立）
+  - Alpine.js：static/js/vendor/alpine.min.js（由 P2D 安裝）
+  - 主邏輯 JS：static/js/app.js（由 P2C 建立）
+-->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="本機運行的文件轉換工具，支援 PDF、Word、PowerPoint、HTML、Markdown、TXT、圖片七種格式互轉，完全免費、完全離線。">
+  <title>文件轉檔 — 本機文件轉換工具</title>
+
+  <!-- Favicon（inline SVG Data URI） -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238B5CF6'/%3E%3Cpath d='M10 8h8l6 6v12H10V8z' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M18 8v6h6' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M16 20a4 4 0 0 0 4-4' stroke='%2322C55E' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M20 16l2 2-2 2' stroke='%2322C55E' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+  <!-- Tailwind CSS（由 start.bat 初始化時下載到本地） -->
+  <link rel="stylesheet" href="/static/css/vendor/tailwind.min.css">
+
+  <!-- 設計代幣（CSS 變數） -->
+  <link rel="stylesheet" href="/static/css/design-tokens.css">
+
+  <!-- 自訂樣式（由 implementer P2C 建立 app.css） -->
+  <link rel="stylesheet" href="/static/css/app.css">
+
+  <!-- 主題初始化（防止閃爍，由 P2C 在此加入 inline script） -->
+  <!--
+    [P2C 注意] 在 <head> 最前方加入以下 script（不要放 defer/async）：
+    <script>
+      (function() {
+        const saved = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (!saved && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
+  -->
+</head>
+
+<body class="bg-[#0A0A0A] dark:bg-[#0A0A0A] text-neutral-100 dark:text-neutral-100
+             bg-white text-neutral-900
+             font-sans min-h-screen
+             transition-colors duration-200"
+      style="font-family: var(--font-sans);">
+
+  <!-- ==========================================================
+       寬度警告（< 1024px 顯示）
+       [Alpine.js 接管：可改用 JS 動態判斷，或保留此 CSS 方案]
+       ========================================================== -->
+  <div class="narrow-screen-warning" aria-live="polite">
+    <!-- Logo -->
+    <div class="mb-6">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="48" height="48" rx="12" fill="#8B5CF6"/>
+        <path d="M14 12h12l9 9v17H14V12z" stroke="white" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M26 12v9h9" stroke="white" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <path d="M24 30a6 6 0 0 0 6-6" stroke="#22C55E" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <path d="M30 24l3 3-3 3" stroke="#22C55E" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1 class="text-xl font-bold text-neutral-100 mb-2">請使用桌面瀏覽器</h1>
+    <p class="text-sm text-neutral-400 max-w-xs leading-relaxed">
+      文件轉檔工具需要至少 1024px 的螢幕寬度才能正常使用。
+      請在電腦上開啟此工具。
+    </p>
+  </div>
+
+  <!-- ==========================================================
+       主 App 容器
+       [Alpine.js 接管：x-data="appData()" 加在此元素]
+       ========================================================== -->
+  <div id="app" class="min-h-screen flex flex-col"
+       data-comment="[P2C] 加 x-data='appData()' 在此 div">
+
+    <!-- ==========================================================
+         HEADER（sticky top，60px 高）
+         ========================================================== -->
+    <header class="sticky top-0 z-40 h-[60px]
+                   bg-[#0A0A0A]/95 dark:bg-[#0A0A0A]/95 bg-white/95
+                   backdrop-blur-md
+                   border-b border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+      <div class="max-w-[960px] mx-auto px-8 h-full flex items-center justify-between">
+
+        <!-- Logo + 標題 -->
+        <a href="/" class="flex items-center gap-2.5 select-none
+                           no-underline focus:outline-none focus-visible:ring-2
+                           focus-visible:ring-violet-500/50 rounded-lg"
+           aria-label="文件轉檔 首頁">
+          <!-- Logo SVG（文件 + 旋轉箭頭） -->
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="28" height="28" rx="7" fill="#8B5CF6"/>
+            <path d="M8 7h7l5 5v10H8V7z" stroke="white" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+            <path d="M15 7v5h5" stroke="white" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+            <path d="M14 18a3.5 3.5 0 0 0 3.5-3.5" stroke="#86EFAC" stroke-width="1.75" fill="none" stroke-linecap="round"/>
+            <path d="M17.5 14.5l1.75 1.75-1.75 1.75" stroke="#86EFAC" stroke-width="1.75" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="text-[15px] font-semibold text-neutral-100 dark:text-neutral-100 text-neutral-900 tracking-tight">
+            文件轉檔
+          </span>
+        </a>
+
+        <!-- 右側工具 -->
+        <div class="flex items-center gap-1">
+
+          <!-- 暗亮模式切換 -->
+          <!-- [P2C 注意] 此按鈕點擊切換 <html> 的 .dark class 並寫入 localStorage -->
+          <button id="theme-toggle"
+                  class="w-9 h-9 flex items-center justify-center rounded-lg
+                         text-neutral-400 hover:text-neutral-100
+                         dark:hover:bg-white/5 hover:bg-neutral-100
+                         transition-all duration-150
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                  aria-label="切換明暗模式"
+                  title="切換明暗模式">
+            <!-- Sun icon（亮模式時顯示，點擊切換到暗） -->
+            <!-- [P2C 接管：動態切換 sun/moon] -->
+            <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <!-- Moon（暗模式預設顯示） -->
+              <path fill-rule="evenodd" clip-rule="evenodd"
+                d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+            </svg>
+          </button>
+
+          <!-- 說明按鈕 -->
+          <!-- [P2C 接管：點擊顯示說明 modal 或 tooltip] -->
+          <button class="w-9 h-9 flex items-center justify-center rounded-lg
+                         text-neutral-400 hover:text-neutral-100
+                         dark:hover:bg-white/5 hover:bg-neutral-100
+                         transition-all duration-150
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                  aria-label="使用說明"
+                  title="使用說明">
+            <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" clip-rule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ==========================================================
+         主內容區
+         ========================================================== -->
+    <main class="flex-1 max-w-[960px] mx-auto w-full px-8 pb-16">
+
+      <!-- ============================================================
+           HERO 區（歡迎標語 + Badge）
+           動畫：animate-fade-in-up（CSS keyframe）
+           ============================================================ -->
+      <section class="pt-12 pb-8 text-center animate-fade-in-up">
+        <h1 class="text-3xl font-bold text-neutral-100 dark:text-neutral-100 text-neutral-900
+                   tracking-tight mb-3">
+          本機運行的文件轉換工具
+        </h1>
+        <p class="text-sm text-neutral-400 dark:text-neutral-400 text-neutral-500
+                  mb-6 max-w-md mx-auto leading-relaxed">
+          七種格式互轉・完全免費・完全離線・無次數限制
+        </p>
+
+        <!-- 三個品牌 Badge -->
+        <div class="flex items-center justify-center gap-3 flex-wrap">
+
+          <!-- 永久免費（綠） -->
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+                       bg-green-500/10 text-green-400 dark:text-green-400 text-green-600
+                       border border-green-500/20 text-xs font-medium"
+                aria-label="永久免費">
+            <span class="w-1.5 h-1.5 rounded-full bg-green-400 dark:bg-green-400 bg-green-500
+                         ring-2 ring-green-400/30 dark:ring-green-400/30 ring-green-500/30"
+                  aria-hidden="true"></span>
+            永久免費
+          </span>
+
+          <!-- 本機運行（藍） -->
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+                       bg-blue-500/10 text-blue-400 dark:text-blue-400 text-blue-600
+                       border border-blue-500/20 text-xs font-medium"
+                aria-label="本機運行，您的檔案不會上傳至任何伺服器">
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-400 dark:bg-blue-400 bg-blue-500
+                         ring-2 ring-blue-400/30 dark:ring-blue-400/30 ring-blue-500/30"
+                  aria-hidden="true"></span>
+            本機運行
+          </span>
+
+          <!-- 無限制（紫） -->
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+                       bg-violet-500/10 text-violet-400 dark:text-violet-400 text-violet-600
+                       border border-violet-500/20 text-xs font-medium"
+                aria-label="無次數與大小限制">
+            <span class="w-1.5 h-1.5 rounded-full bg-violet-400 dark:bg-violet-400 bg-violet-500
+                         ring-2 ring-violet-400/30 dark:ring-violet-400/30 ring-violet-500/30"
+                  aria-hidden="true"></span>
+            無限制
+          </span>
+
+        </div>
+      </section>
+
+      <!-- ============================================================
+           DROPZONE（核心上傳區）
+           [Alpine.js 接管：
+             - @dragover.prevent="state = 'dragover'"
+             - @dragleave="state = 'idle'"
+             - @drop.prevent="handleDrop($event)"
+             - @click="$refs.fileInput.click()"
+             - @keydown.enter="$refs.fileInput.click()"
+             - @keydown.space.prevent="$refs.fileInput.click()"
+             - x-bind:class="dropzoneClass()"
+           ]
+           ============================================================ -->
+      <section aria-label="檔案上傳區">
+        <!-- DropZone 主體（此示範展示 idle 狀態） -->
+        <div class="relative min-h-[200px] rounded-2xl border-2 border-dashed
+                    border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-300
+                    bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-neutral-50
+                    p-10 flex flex-col items-center justify-center gap-4
+                    cursor-pointer group dropzone-base dropzone-idle
+                    hover:border-violet-500/50 hover:bg-violet-500/5
+                    focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50
+                    transition-all duration-200"
+             role="button"
+             tabindex="0"
+             aria-label="拖放檔案到這裡，或點擊選擇檔案（支援 PDF、Word、PowerPoint、HTML、Markdown、TXT、PNG/JPG）"
+             data-comment="[P2C] 此 div 需要加入 Alpine.js 指令，@dragover @dragleave @drop @click @keydown">
+
+          <!-- 上傳圖示（Upload Cloud） -->
+          <div class="w-12 h-12 text-neutral-500 dark:text-neutral-500 text-neutral-400
+                      group-hover:text-violet-400 dark:group-hover:text-violet-400
+                      transition-all duration-200 dropzone-icon"
+               aria-hidden="true">
+            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+              <path d="M32 32l-8-8-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M24 24v16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              <path d="M40.73 35.73a10 10 0 000-17.46A14 14 0 1012.02 28H14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
+          <!-- 提示文字 -->
+          <div class="text-center pointer-events-none">
+            <p class="text-[15px] font-medium text-neutral-300 dark:text-neutral-300 text-neutral-700 mb-1">
+              拖放檔案到這裡
+            </p>
+            <p class="text-sm text-neutral-500 dark:text-neutral-500 text-neutral-400">
+              或
+              <span class="text-violet-400 dark:text-violet-400 text-violet-600
+                           underline underline-offset-2 pointer-events-auto">
+                點擊選擇檔案
+              </span>
+            </p>
+          </div>
+
+          <!-- 支援格式說明 -->
+          <p class="text-xs text-neutral-600 dark:text-neutral-600 text-neutral-400
+                    text-center max-w-sm pointer-events-none">
+            支援：PDF &middot; Word (.docx) &middot; PowerPoint (.pptx) &middot;
+            HTML &middot; Markdown &middot; TXT &middot; 圖片（PNG/JPG）
+            <br>
+            <span class="text-neutral-700 dark:text-neutral-700 text-neutral-300">
+              單檔最大 50MB，累計最大 200MB
+            </span>
+          </p>
+
+          <!-- 隱藏的 file input（由 Alpine.js 觸發） -->
+          <input type="file"
+                 multiple
+                 class="sr-only"
+                 accept=".pdf,.docx,.doc,.pptx,.ppt,.html,.htm,.md,.markdown,.txt,.png,.jpg,.jpeg"
+                 aria-hidden="true"
+                 tabindex="-1"
+                 data-comment="[P2C] x-ref='fileInput' + @change='handleFiles($event.target.files)'">
+        </div>
+
+        <!-- ============================================================
+             FILELIST（動態檔案清單，有檔案才顯示）
+             [Alpine.js 接管：x-show="files.length > 0" x-transition]
+             示範：2 筆假資料
+             ============================================================ -->
+        <div class="mt-3 space-y-2"
+             data-comment="[P2C] x-show='files.length > 0' + x-transition">
+
+          <!-- 假資料 1：report.pdf -->
+          <div class="flex items-center gap-3 px-4 h-14
+                      bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                      border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                      rounded-xl animate-slide-in"
+               data-comment="[P2C] 此 div 用 x-for 迴圈產生，每個 file 對應一行">
+
+            <!-- 格式圖示（PDF 紅）-->
+            <div class="w-8 h-8 flex-shrink-0 flex items-center justify-center
+                        rounded-lg bg-[#262626] dark:bg-[#262626] bg-neutral-100
+                        format-pdf"
+                 aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke="#EF4444" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+                <path d="M14 2v6h6" stroke="#EF4444" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+                <path d="M9 15h6M9 11h3" stroke="#EF4444" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+
+            <!-- 檔名 -->
+            <span class="flex-1 text-[13px] font-mono
+                         text-neutral-200 dark:text-neutral-200 text-neutral-700
+                         truncate"
+                  title="report.pdf">
+              report.pdf
+            </span>
+
+            <!-- 檔案大小 -->
+            <span class="text-xs text-neutral-500 dark:text-neutral-500 text-neutral-400
+                         flex-shrink-0 mr-1">
+              2.3 MB
+            </span>
+
+            <!-- 刪除按鈕 -->
+            <button class="w-7 h-7 flex-shrink-0 flex items-center justify-center
+                           rounded-lg text-neutral-600 dark:text-neutral-600 text-neutral-400
+                           hover:text-red-400 hover:bg-red-400/10
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                    aria-label="移除 report.pdf"
+                    data-comment="[P2C] @click='removeFile(index)'">
+              <!-- X icon -->
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 假資料 2：notes.docx -->
+          <div class="flex items-center gap-3 px-4 h-14
+                      bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                      border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                      rounded-xl animate-slide-in animate-delay-1">
+
+            <!-- 格式圖示（DOCX 藍）-->
+            <div class="w-8 h-8 flex-shrink-0 flex items-center justify-center
+                        rounded-lg bg-[#262626] dark:bg-[#262626] bg-neutral-100
+                        format-docx"
+                 aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke="#3B82F6" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+                <path d="M14 2v6h6" stroke="#3B82F6" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+                <path d="M9 13h6M9 17h4" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+
+            <!-- 檔名 -->
+            <span class="flex-1 text-[13px] font-mono
+                         text-neutral-200 dark:text-neutral-200 text-neutral-700
+                         truncate"
+                  title="notes.docx">
+              notes.docx
+            </span>
+
+            <!-- 檔案大小 -->
+            <span class="text-xs text-neutral-500 dark:text-neutral-500 text-neutral-400
+                         flex-shrink-0 mr-1">
+              1.1 MB
+            </span>
+
+            <!-- 刪除按鈕 -->
+            <button class="w-7 h-7 flex-shrink-0 flex items-center justify-center
+                           rounded-lg text-neutral-600 dark:text-neutral-600 text-neutral-400
+                           hover:text-red-400 hover:bg-red-400/10
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                    aria-label="移除 notes.docx"
+                    data-comment="[P2C] @click='removeFile(index)'">
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+
+        </div>
+        <!-- /FILELIST -->
+
+        <!-- ============================================================
+             FORMAT SELECTOR（格式選擇器，有檔案才顯示）
+             [Alpine.js 接管：x-show="files.length > 0"]
+             ============================================================ -->
+        <div class="mt-4"
+             data-comment="[P2C] x-show='files.length > 0'">
+          <p class="text-xs font-medium text-neutral-500 dark:text-neutral-500 text-neutral-400
+                    mb-2 uppercase tracking-wider">
+            轉換目標格式
+          </p>
+
+          <!-- 格式選擇 icon grid -->
+          <div class="flex gap-2 flex-wrap"
+               role="radiogroup"
+               aria-label="選擇目標格式"
+               data-comment="[P2C] x-for 或靜態 7 個按鈕，@click='selectFormat(fmt)' x-bind:aria-pressed='selectedFormat===fmt'">
+
+            <!-- PDF -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 dark:text-neutral-400 text-neutral-500
+                           cursor-pointer
+                           hover:border-neutral-600 dark:hover:border-neutral-600 hover:border-neutral-300
+                           hover:text-neutral-200 dark:hover:text-neutral-200 hover:text-neutral-700
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="true"
+                    aria-label="轉換為 PDF"
+                    data-format="pdf"
+                    data-comment="[P2C] 選中狀態加 class: border-violet-500 bg-violet-500/10 text-violet-300">
+              <!-- 選中狀態示範（此按鈕示範選中） 加 border-violet-500 bg-violet-500/10 text-violet-300 -->
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(239,68,68,0.15)"/>
+                  <path d="M19 7H11a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V12l-4-5z" stroke="#EF4444" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                  <path d="M19 7v5h4" stroke="#EF4444" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                  <path d="M13 19h6M13 15h3" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">PDF</span>
+            </button>
+
+            <!-- Word (DOCX) -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 dark:text-neutral-400 text-neutral-500
+                           cursor-pointer
+                           hover:border-neutral-600 hover:text-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="false"
+                    aria-label="轉換為 Word (.docx)"
+                    data-format="docx">
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(59,130,246,0.15)"/>
+                  <path d="M19 7H11a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V12l-4-5z" stroke="#3B82F6" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                  <path d="M19 7v5h4" stroke="#3B82F6" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                  <path d="M13 17h6M13 21h4" stroke="#3B82F6" stroke-width="1.25" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">Word</span>
+            </button>
+
+            <!-- PowerPoint (PPTX) -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 cursor-pointer
+                           hover:border-neutral-600 hover:text-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="false"
+                    aria-label="轉換為 PowerPoint (.pptx)"
+                    data-format="pptx">
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(249,115,22,0.15)"/>
+                  <rect x="9" y="8" width="14" height="16" rx="2" stroke="#F97316" stroke-width="1.5" fill="none"/>
+                  <rect x="12" y="11" width="8" height="6" rx="1" fill="rgba(249,115,22,0.3)"/>
+                  <path d="M12 19h8M12 21.5h5" stroke="#F97316" stroke-width="1.25" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">PPT</span>
+            </button>
+
+            <!-- HTML -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 cursor-pointer
+                           hover:border-neutral-600 hover:text-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="false"
+                    aria-label="轉換為 HTML"
+                    data-format="html">
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(245,158,11,0.15)"/>
+                  <path d="M10 8l-2 16h16l-2-16H10z" stroke="#F59E0B" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                  <path d="M13 13l-2 3 2 3M19 13l2 3-2 3M17 11l-2 10" stroke="#F59E0B" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">HTML</span>
+            </button>
+
+            <!-- Markdown -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 cursor-pointer
+                           hover:border-neutral-600 hover:text-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="false"
+                    aria-label="轉換為 Markdown"
+                    data-format="md">
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(163,163,163,0.12)"/>
+                  <rect x="7" y="10" width="18" height="12" rx="2" stroke="#A3A3A3" stroke-width="1.5" fill="none"/>
+                  <path d="M11 18v-6l3 3 3-3v6M20 18v-4l-2 2" stroke="#A3A3A3" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">MD</span>
+            </button>
+
+            <!-- TXT -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 cursor-pointer
+                           hover:border-neutral-600 hover:text-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="false"
+                    aria-label="轉換為純文字 (.txt)"
+                    data-format="txt">
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(115,115,115,0.12)"/>
+                  <path d="M10 11h12M10 15h12M10 19h8" stroke="#737373" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">TXT</span>
+            </button>
+
+            <!-- 圖片 (IMG) -->
+            <button class="flex-1 min-w-[80px] flex flex-col items-center gap-1.5 py-3 px-2
+                           rounded-xl border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                           text-neutral-400 cursor-pointer
+                           hover:border-neutral-600 hover:text-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                           format-btn"
+                    aria-pressed="false"
+                    aria-label="轉換為圖片 (PNG)"
+                    data-format="image">
+              <div class="w-8 h-8" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                  <rect width="32" height="32" rx="8" fill="rgba(34,197,94,0.12)"/>
+                  <rect x="7" y="8" width="18" height="16" rx="2" stroke="#22C55E" stroke-width="1.5" fill="none"/>
+                  <circle cx="12" cy="12.5" r="1.5" fill="#22C55E"/>
+                  <path d="M7 20l5-5 4 4 2-2 5 5" stroke="#22C55E" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium leading-none">圖片</span>
+            </button>
+
+          </div>
+        </div>
+        <!-- /FORMAT SELECTOR -->
+
+        <!-- ============================================================
+             CTA 按鈕（主要行動，有檔案且選了格式才啟用）
+             [Alpine.js 接管：x-bind:disabled="!canConvert()" @click="startConversion()"]
+             ============================================================ -->
+        <div class="mt-6 flex justify-center"
+             data-comment="[P2C] x-show='files.length > 0'">
+          <button class="w-full max-w-xs px-8 py-3.5
+                         bg-violet-600 hover:bg-violet-500 active:bg-violet-700
+                         text-white font-semibold text-[15px] tracking-tight
+                         rounded-xl
+                         shadow-[0_0_20px_rgba(139,92,246,0.3)]
+                         hover:shadow-[0_0_30px_rgba(139,92,246,0.5)]
+                         hover:scale-[1.02] active:scale-[0.99]
+                         transition-all duration-200
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50
+                         focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A]
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         disabled:hover:scale-100
+                         disabled:hover:shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+                  type="button"
+                  data-comment="[P2C] x-bind:disabled='!canConvert()' @click='startConversion()' 動態文字：'開始轉換 ('+files.length+'個檔案)'">
+            開始轉換 (2 個檔案)
+          </button>
+        </div>
+        <!-- /CTA -->
+
+      </section>
+      <!-- /DROPZONE + FILELIST + FORMAT SELECTOR + CTA -->
+
+      <!-- ============================================================
+           PROGRESS PANEL（轉換進度，上傳/處理中顯示）
+           [Alpine.js 接管：x-show="['uploading','processing'].includes(appState)"]
+           注意：此區塊示範 processing 狀態（一個完成，一個處理中）
+           ============================================================ -->
+      <section class="mt-8"
+               aria-live="polite"
+               aria-label="轉換進度"
+               data-comment="[P2C] x-show='isConverting' x-transition:enter='animate-scale-in'">
+
+        <div class="p-6 rounded-2xl
+                    bg-[#1A1A1A] dark:bg-[#1A1A1A] bg-white
+                    border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                    animate-scale-in">
+
+          <!-- 標題 + 百分比 -->
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-sm font-medium text-neutral-300 dark:text-neutral-300 text-neutral-700">
+              轉換進度
+            </span>
+            <span class="text-sm font-mono text-neutral-400 dark:text-neutral-400 text-neutral-500"
+                  data-comment="[P2C] x-text='Math.round(progress*100) + \"%\"'">
+              50%
+            </span>
+          </div>
+
+          <!-- 整體進度條 -->
+          <div class="progress-track mb-6"
+               role="progressbar"
+               aria-valuenow="50"
+               aria-valuemin="0"
+               aria-valuemax="100"
+               aria-label="整體轉換進度 50%">
+            <div class="progress-fill" style="width: 50%"
+                 data-comment="[P2C] x-bind:style='`width: ${progress*100}%`'">
+            </div>
+          </div>
+
+          <!-- 逐檔狀態 -->
+          <div class="space-y-3"
+               data-comment="[P2C] x-for='file in currentJob.files'">
+
+            <!-- 檔案 1：completed -->
+            <div class="flex items-center gap-3">
+              <!-- 狀態圖示：completed（綠色 check） -->
+              <div class="w-5 h-5 flex-shrink-0 flex items-center justify-center
+                          rounded-full bg-green-500/20"
+                   aria-label="轉換完成"
+                   aria-hidden="true">
+                <svg class="w-3 h-3 text-green-400" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <!-- 檔名 + 轉換方向 -->
+              <span class="flex-1 text-[13px] font-mono
+                           text-neutral-300 dark:text-neutral-300 text-neutral-600 truncate">
+                report.pdf &rarr; report.docx
+              </span>
+              <!-- 狀態文字 -->
+              <span class="text-xs text-green-400 dark:text-green-400 text-green-600 flex-shrink-0">
+                完成
+              </span>
+            </div>
+
+            <!-- 檔案 2：processing（旋轉） -->
+            <div class="flex items-center gap-3">
+              <!-- 狀態圖示：processing（旋轉） -->
+              <div class="w-5 h-5 flex-shrink-0 flex items-center justify-center"
+                   aria-label="轉換中"
+                   aria-hidden="true">
+                <svg class="w-5 h-5 text-violet-400 animate-spin-slow"
+                     viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10"
+                          stroke="currentColor" stroke-width="2" stroke-opacity="0.2"/>
+                  <path d="M12 2a10 10 0 0 1 10 10"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <!-- 檔名 -->
+              <span class="flex-1 text-[13px] font-mono
+                           text-neutral-300 dark:text-neutral-300 text-neutral-600 truncate">
+                notes.docx &rarr; notes.pdf
+              </span>
+              <!-- 狀態文字 -->
+              <span class="text-xs text-violet-400 dark:text-violet-400 text-violet-600 flex-shrink-0">
+                處理中...
+              </span>
+            </div>
+
+          </div>
+        </div>
+      </section>
+      <!-- /PROGRESS PANEL -->
+
+      <!-- ============================================================
+           RESULT PANEL（結果區，轉換完成後顯示）
+           [Alpine.js 接管：x-show="appState === 'completed'" x-transition]
+           注意：此區塊示範 completed 狀態（成功）
+           ============================================================ -->
+      <section class="mt-6"
+               aria-live="assertive"
+               aria-label="轉換結果"
+               data-comment="[P2C] x-show='appState===\"completed\"||appState===\"partial\"||appState===\"failed\"'">
+
+        <!-- 成功版本 -->
+        <div class="p-6 rounded-2xl
+                    bg-green-500/5 dark:bg-green-500/5
+                    border border-green-500/20 dark:border-green-500/20 border-green-300
+                    shadow-[0_0_20px_rgba(34,197,94,0.08)]
+                    animate-scale-in">
+
+          <!-- 標題區 -->
+          <div class="flex items-center gap-3 mb-5">
+            <!-- 盾牌 + checkmark（帶筆畫動畫） -->
+            <div class="w-10 h-10 flex-shrink-0" aria-hidden="true">
+              <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                <path d="M20 4l14 5v9c0 8-6 14.5-14 17-8-2.5-14-9-14-17V9L20 4z"
+                      fill="rgba(34,197,94,0.15)" stroke="#22C55E" stroke-width="1.75"/>
+                <path class="checkmark-path"
+                      d="M13 20l5 5 9-9"
+                      stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                      fill="none"/>
+              </svg>
+            </div>
+            <div class="flex-1">
+              <h2 class="text-[15px] font-semibold text-green-400 dark:text-green-400 text-green-700">
+                轉換完成！
+              </h2>
+              <p class="text-xs text-neutral-500 dark:text-neutral-500 text-neutral-400 mt-0.5"
+                 data-comment="[P2C] x-text='successCount + \" 個檔案已準備好下載'">
+                2 個檔案已準備好下載
+              </p>
+            </div>
+          </div>
+
+          <!-- 下載按鈕組 -->
+          <div class="flex gap-3 flex-wrap">
+            <!-- 下載全部 ZIP -->
+            <a href="#"
+               class="flex-1 min-w-[140px] flex items-center justify-center gap-2
+                      py-2.5 px-4 rounded-xl
+                      bg-green-500/15 hover:bg-green-500/25
+                      text-green-400 dark:text-green-400 text-green-700
+                      font-medium text-sm
+                      border border-green-500/25 hover:border-green-500/40
+                      transition-all duration-150
+                      focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500/40"
+               download
+               aria-label="下載全部檔案（ZIP 壓縮包）"
+               data-comment="[P2C] x-bind:href='downloadUrl' @click='trackDownload()'">
+              <!-- Download icon -->
+              <svg class="w-4 h-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 2v8M5 7l3 3 3-3M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              下載全部 (ZIP)
+            </a>
+
+            <!-- 重新開始 -->
+            <button class="py-2.5 px-4 rounded-xl
+                           bg-[#262626] dark:bg-[#262626] bg-neutral-100
+                           hover:bg-[#333] dark:hover:bg-[#333] hover:bg-neutral-200
+                           text-neutral-400 dark:text-neutral-400 text-neutral-500
+                           hover:text-neutral-200 dark:hover:text-neutral-200 hover:text-neutral-700
+                           font-medium text-sm
+                           border border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                           transition-all duration-150
+                           focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40"
+                    type="button"
+                    aria-label="清除所有檔案，重新開始"
+                    data-comment="[P2C] @click='reset()' (重置 Alpine state 回 idle)">
+              重新開始
+            </button>
+          </div>
+
+        </div>
+        <!-- /成功版本 -->
+
+        <!-- [P2C 注意] 部分成功版本：改為 amber-500/xxx 色系，標題「部分轉換完成」，需列出失敗檔案 -->
+        <!-- [P2C 注意] 失敗版本：改為 red-500/xxx 色系，加 animate-shake，標題「轉換失敗」，列出每個錯誤原因 -->
+
+      </section>
+      <!-- /RESULT PANEL -->
+
+      <!-- ============================================================
+           FORMAT MATRIX PANEL（格式支援矩陣，可摺疊）
+           [Alpine.js 接管：@click="matrixOpen = !matrixOpen" x-show="matrixOpen" x-transition]
+           ============================================================ -->
+      <section class="mt-8 mb-4"
+               data-comment="[P2C] x-data='{matrixOpen: false}'">
+
+        <!-- Toggle 按鈕 -->
+        <button class="w-full flex items-center justify-between
+                       py-3 border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200
+                       text-sm text-neutral-400 dark:text-neutral-400 text-neutral-500
+                       hover:text-neutral-200 dark:hover:text-neutral-200 hover:text-neutral-700
+                       transition-colors duration-150
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40
+                       rounded-none"
+                type="button"
+                aria-expanded="false"
+                aria-controls="format-matrix"
+                data-comment="[P2C] @click='matrixOpen=!matrixOpen' x-bind:aria-expanded='matrixOpen'">
+          <span class="font-medium">支援的轉換格式</span>
+          <!-- Chevron -->
+          <svg class="w-4 h-4 transition-transform duration-200"
+               viewBox="0 0 16 16" fill="none" aria-hidden="true"
+               data-comment="[P2C] x-bind:class='{\"rotate-180\": matrixOpen}'">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <!-- 矩陣表格 -->
+        <div id="format-matrix"
+             class="mt-2 overflow-x-auto"
+             data-comment="[P2C] x-show='matrixOpen' x-transition">
+
+          <table class="w-full text-xs border-collapse"
+                 aria-label="格式轉換支援矩陣">
+            <thead>
+              <tr>
+                <th class="text-left py-2 px-3 text-neutral-500 font-medium w-16">FROM \ TO</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">PDF</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">Word</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">PPT</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">HTML</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">MD</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">TXT</th>
+                <th class="py-2 px-2 text-neutral-500 font-medium text-center">圖片</th>
+              </tr>
+            </thead>
+            <tbody class="text-center">
+              <!-- PDF 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-red-400 dark:text-red-400 text-red-600">PDF</td>
+                <td class="py-2 px-2 text-neutral-700">—</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+              </tr>
+              <!-- Word 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-blue-400 dark:text-blue-400 text-blue-600">Word</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 text-neutral-700">—</td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+              </tr>
+              <!-- PPT 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-orange-400 dark:text-orange-400 text-orange-600">PPT</td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2 text-neutral-700">—</td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2"><span class="fidelity-low px-1.5 py-0.5 rounded-md text-[10px] font-medium">低</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+              </tr>
+              <!-- HTML 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-amber-400 dark:text-amber-400 text-amber-600">HTML</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2 text-neutral-700">—</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+              </tr>
+              <!-- MD 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-neutral-400 dark:text-neutral-400 text-neutral-500">MD</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 text-neutral-700">—</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+              </tr>
+              <!-- TXT 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-neutral-500 dark:text-neutral-500 text-neutral-600">TXT</td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2"><span class="fidelity-medium px-1.5 py-0.5 rounded-md text-[10px] font-medium">中</span></td>
+                <td class="py-2 px-2 fidelity-none text-lg">✗</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 text-neutral-700">—</td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+              </tr>
+              <!-- IMG 行 -->
+              <tr class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200">
+                <td class="py-2 px-3 text-left font-medium text-green-400 dark:text-green-400 text-green-600">圖片</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+                <td class="py-2 px-2 fidelity-none">—</td>
+                <td class="py-2 px-2"><span class="fidelity-high px-1.5 py-0.5 rounded-md text-[10px] font-medium">高</span></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- 圖例 -->
+          <div class="flex items-center gap-4 mt-3 flex-wrap">
+            <span class="flex items-center gap-1.5 text-xs">
+              <span class="fidelity-high px-1.5 py-0.5 rounded text-[10px] font-medium">高</span>
+              <span class="text-neutral-500">90%+ 視覺一致</span>
+            </span>
+            <span class="flex items-center gap-1.5 text-xs">
+              <span class="fidelity-medium px-1.5 py-0.5 rounded text-[10px] font-medium">中</span>
+              <span class="text-neutral-500">70%-90%，部分樣式可能丟失</span>
+            </span>
+            <span class="flex items-center gap-1.5 text-xs">
+              <span class="fidelity-low px-1.5 py-0.5 rounded text-[10px] font-medium">低</span>
+              <span class="text-neutral-500">僅保留文字結構</span>
+            </span>
+            <span class="flex items-center gap-1.5 text-xs">
+              <span class="fidelity-none text-lg leading-none">✗</span>
+              <span class="text-neutral-500">v1.0 不支援</span>
+            </span>
+          </div>
+        </div>
+        <!-- /FORMAT MATRIX -->
+
+      </section>
+
+    </main>
+    <!-- /main -->
+
+    <!-- ==========================================================
+         FOOTER（極簡）
+         ========================================================== -->
+    <footer class="border-t border-[#2A2A2A] dark:border-[#2A2A2A] border-neutral-200 py-6">
+      <div class="max-w-[960px] mx-auto px-8 text-center">
+        <p class="text-xs text-neutral-700 dark:text-neutral-700 text-neutral-400">
+          本機運行 &middot; 完全免費 &middot; 無浮水印 &middot;
+          <span class="font-mono">v1.0.0</span>
+        </p>
+      </div>
+    </footer>
+
+    <!-- ==========================================================
+         STICKY CTA（頁面捲動時固定在底部，有大量檔案時的後備）
+         [Alpine.js 接管：x-show="files.length > 0 && !isConverting && scrolledPastCta"]
+         ========================================================== -->
+    <div class="fixed bottom-6 left-0 right-0 flex justify-center z-30 pointer-events-none"
+         data-comment="[P2C] x-show='showStickyCta' x-transition">
+      <button class="pointer-events-auto
+                     px-8 py-3.5
+                     bg-violet-600/95 hover:bg-violet-500
+                     backdrop-blur-md
+                     text-white font-semibold text-[15px]
+                     rounded-full
+                     shadow-[0_0_30px_rgba(139,92,246,0.5),0_8px_32px_rgba(0,0,0,0.4)]
+                     hover:shadow-[0_0_40px_rgba(139,92,246,0.7),0_8px_32px_rgba(0,0,0,0.5)]
+                     hover:scale-[1.02] active:scale-[0.99]
+                     transition-all duration-200
+                     focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50
+                     focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A]"
+              type="button"
+              aria-label="開始轉換"
+              data-comment="[P2C] @click='startConversion()'">
+        開始轉換
+      </button>
+    </div>
+
+  </div>
+  <!-- /app -->
+
+  <!-- ==========================================================
+       Alpine.js（由 P2D implementer 下載到本地）
+       [P2C 注意] 需要在 app.js 之前載入 Alpine
+       ========================================================== -->
+  <!-- <script src="/static/js/vendor/alpine.min.js" defer></script> -->
+  <!-- <script src="/static/js/app.js" defer></script> -->
+
+  <!--
+    [P2C 說明] Alpine.js 接管清單：
+
+    1. 主 data object：x-data="appData()" 在 #app div
+       appData() 需包含：
+       - files: []           已選擇的 File 物件陣列
+       - selectedFormat: ''  選中的目標格式
+       - appState: 'idle'    'idle'|'uploading'|'processing'|'completed'|'partial'|'failed'
+       - currentJob: null    目前的 Job（含 job_id, files, progress）
+       - matrixOpen: false   格式矩陣摺疊狀態
+       - showStickyCta: false 是否顯示懸浮 CTA
+
+    2. 主題切換：獨立不進 Alpine（DOM 操作 + localStorage）
+
+    3. 鍵盤快捷鍵（在 app.js 全局監聽）：
+       - Ctrl+O → $refs.fileInput.click()
+       - Escape → 結果頁時 reset()
+
+    4. 上傳邏輯在 uploader.js（XHR multipart + progress）
+
+    5. 輪詢邏輯在 app.js（setInterval 500ms GET /api/status）
+  -->
+
+</body>
+</html>
