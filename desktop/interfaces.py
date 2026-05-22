@@ -198,6 +198,7 @@ class PageID(_EnumCommercial):
     HISTORY = "history"
     SETTINGS = "settings"
     ABOUT = "about"
+    PDF_TOOLS = "pdf_tools"
 
 
 @dataclass
@@ -295,3 +296,16 @@ def get_format_display_name(fmt: str) -> str:
         大寫顯示名，例如 "PDF"；image 特例回傳 "圖片"。
     """
     return "圖片" if fmt == "image" else fmt.upper()
+
+
+# ============================================================================
+# PDF Tools 擴充（W-PDF-TOOLS append-only — 不影響既有契約）
+# ============================================================================
+
+class PdfToolsControllerSignals(QObject):
+    """PdfToolsController 對外 Signal 契約。"""
+
+    operation_started = Signal(str)             # operation_name: "merge"|"split"|"compress"|"encrypt"|"decrypt"
+    operation_progress = Signal(float)          # 0.0–1.0
+    operation_completed = Signal(str, object)   # operation_name, result (Path | list[Path] | dict | None)
+    operation_failed = Signal(str, str)         # operation_name, error_message
