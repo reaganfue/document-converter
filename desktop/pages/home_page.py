@@ -161,6 +161,9 @@ class HomePage(BasePage):
         self._history_manager = managers.get("history")
         self._notification_manager = managers.get("notification")
 
+        # 啟動時立即從 DB 載入今日統計（MainWindowV2 不會觸發 on_enter）
+        self._refresh_stats()
+
     # ------------------------------------------------------------------
     # Signal 連接
     # ------------------------------------------------------------------
@@ -434,26 +437,45 @@ class HomePage(BasePage):
     def _refresh_stats(self) -> None:
         """重算並更新頂部 StatsBar 三欄數字。
 
-        今日 = 本 session 加入的任務總數（file_cards 中的所有任務）
-        進行中 = CONVERTING 狀態的任務數
-        已完成 = DONE 或 ERROR 狀態的任務數
+        今日   = 本地今日 00:00 至今 DB 中所有歷史紀錄筆數（跨 session 持久）
+        進行中 = 當前 session CONVERTING 狀態的任務數
+        已完成 = 本地今日 00:00 至今 DB 中 status="done" 的紀錄數（跨 session 持久）
+
+        進行中只能從當前 session 算 — DB 紀錄都是終態（done/error/cancelled），
+        重啟應用後本來就不會有殘留的進行中任務。
         """
-        if self._controller is None:
-            self.stats_bar.update_counts(0, 0, 0)
-            return
-
+        # 進行中：當前 session 計數
         in_progress = 0
-        completed = 0
-        jobs_dict = getattr(self._controller, "_jobs", {})
+        if self._controller is not None:
+            jobs_dict = getattr(self._controller, "_jobs", {})
+            for job_id in self._file_cards:
+                job = jobs_dict.get(job_id)
+                if job is not None and job.status == JobStatus.CONVERTING:
+                    in_progress += 1
 
-        for job_id in self._file_cards:
-            job = jobs_dict.get(job_id)
-            if job is None:
-                continue
-            if job.status == JobStatus.CONVERTING:
-                in_progress += 1
-            elif job.status in (JobStatus.DONE, JobStatus.ERROR):
-                completed += 1
+        # 今日 / 已完成：從 DB 讀，跨 session 持久
+        today_count = 0
+        completed_count = 0
+        if self._history_manager is not None:
+            try:
+                today_start = self._today_start_utc_iso()
+                today_count = self._history_manager.count(date_from=today_start)
+                completed_count = self._history_manager.count(
+                    status="done", date_from=today_start
+                )
+            except Exception as exc:
+                logger.debug("_refresh_stats: HistoryManager 查詢失敗 — %s", exc)
 
-        today = len(self._file_cards)
-        self.stats_bar.update_counts(today, in_progress, completed)
+        self.stats_bar.update_counts(today_count, in_progress, completed_count)
+
+    @staticmethod
+    def _today_start_utc_iso() -> str:
+        """回傳本地今日 00:00 對應的 UTC ISO-8601 字串。
+
+        DB 中 created_at 以 UTC ISO-8601 儲存，需把使用者感受的「本地今日」
+        轉成相同基準才能正確比對。
+        """
+        from datetime import datetime, timezone
+        local_now = datetime.now().astimezone()
+        local_today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return local_today_start.astimezone(timezone.utc).isoformat()

@@ -341,6 +341,9 @@ class SettingsPage(BasePage):
             # 匯入完成後也重載（確保 UI 反映匯入結果）
             sm.signals.imported.connect(lambda _count: self._load_current_values())
             logger.debug("SettingsPage：已連接 SettingsManager signals")
+            # 啟動時立即將 SettingsManager 持久化值反映到 UI 控件
+            # （MainWindowV2 不會觸發 on_enter，所以這裡必須主動觸發一次）
+            self._load_current_values()
 
     # =========================================================================
     # UI ↔ SettingsManager 同步
