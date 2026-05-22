@@ -306,7 +306,11 @@ class ConversionController(QObject):
     # ------------------------------------------------------------------
 
     @Slot(list)
-    def add_files(self, file_paths: list[Path]) -> None:
+    def add_files(
+        self,
+        file_paths: list[Path],
+        target_format: str | None = None,
+    ) -> None:
         """處理 DropZone 送入的檔案清單，建立並排隊 ConversionJob。
 
         每個有效檔案建立一個 ConversionJob，並以 PENDING 狀態發出 job_added Signal。
@@ -314,6 +318,9 @@ class ConversionController(QObject):
 
         Args:
             file_paths: 使用者拖入或選擇的檔案路徑清單（list[Path]）。
+            target_format: 可選的目標格式覆寫（小寫無點）。若提供且該來源格式支援
+                此目標,則所有檔案的 target_format 統一設為此值;否則退回 targets[0]。
+                主要由「歷史 → 一鍵再轉」流程使用。
         """
         for raw_path in file_paths:
             file_path = Path(raw_path) if not isinstance(raw_path, Path) else raw_path
@@ -332,19 +339,31 @@ class ConversionController(QObject):
                 )
                 continue
 
+            # 決定最終 target_format:優先使用覆寫值,否則用 targets[0]
+            preferred = target_format.lower() if target_format else None
+            if preferred and preferred in targets:
+                chosen_target = preferred
+            else:
+                chosen_target = targets[0]
+                if preferred:
+                    logger.debug(
+                        "add_files: 目標格式覆寫 '%s' 不在支援清單 %s,退回 %s",
+                        preferred, targets, chosen_target,
+                    )
+
             job_id = uuid.uuid4().hex[:8]
             job = ConversionJob(
                 job_id=job_id,
                 source_path=file_path,
                 source_format=source_ext,
-                target_format=targets[0],
+                target_format=chosen_target,
                 status=JobStatus.PENDING,
             )
 
             self._jobs[job_id] = job
             self._job_manager.enqueue(job)
 
-            logger.debug("Job 建立 [job=%s]: %s → %s", job_id, source_ext, targets[0])
+            logger.debug("Job 建立 [job=%s]: %s → %s", job_id, source_ext, chosen_target)
 
             self.signals.job_added.emit(job)
             self.signals.job_status_changed.emit(job_id, JobStatus.PENDING.value)
