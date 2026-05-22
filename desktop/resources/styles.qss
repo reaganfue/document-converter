@@ -1,15 +1,648 @@
-/* 自訂 QSS 樣式表 — Round 2 widgets-2 代理可在此加入客製樣式。
+/* ============================================================================
+ * 文件轉檔 — Nordic Design System
  *
- * QFluentWidgets 已提供主體 Fluent Design 樣式，
- * 此檔案僅用於覆蓋或補充特定元件的細節。
+ * 這是一個 QSS template,內含 ${token} 佔位符;
+ * 啟動時由 desktop/utils/theme.py 的 render_stylesheet() 注入實際值。
  *
- * 品牌色：#8B5CF6（紫）
- * 字體：Segoe UI Variable, 微軟正黑體
+ * 設計原則(避免變成 Material / Fluent 山寨):
+ *   - 圓角階梯:按鈕 6px / 輸入 6px / 卡片 12px(不全部 pill)
+ *   - 邊框優先:1px 細邊取代陰影,陰影僅在浮層 InfoBar / Dialog 使用
+ *   - 強調色克制:只在主要動作按鈕、focus、進度條使用 accent_primary
+ *   - 字級階梯:caption 12 / body 14 / body_lg 16 / title 20 / h1 28
+ *   - 動效短促:120-240ms,Qt 透過 QPropertyAnimation 實現(QSS 不寫 transition)
  *
- * 使用方式（Round 3 整合時在 main.py 載入）：
- *   app.setStyleSheet(open("desktop/resources/styles.qss").read())
- */
+ * Token 系統見 desktop/utils/theme.py 的 NORDIC_LIGHT / NORDIC_DARK。
+ * ============================================================================ */
 
-/* TODO(Round 2 / widgets-2): 加入 DropZone 三種狀態的 QSS 樣式 */
-/* TODO(Round 2 / widgets-2): 加入 FileCard 卡片樣式 */
-/* TODO(Round 3): 載入此 QSS 並套用至 app */
+
+/* ───────────────────────────── 全局基底 ───────────────────────────────── */
+
+QWidget {
+    font-family: ${font_family};
+    font-size: ${font_size_body};
+    color: ${text_primary};
+}
+
+QMainWindow,
+MSFluentWindow,
+FluentWindow {
+    background-color: ${bg_primary};
+}
+
+QStackedWidget {
+    background-color: ${bg_primary};
+}
+
+/* Page 背景 — 對應 BasePage.PAGE_ID.value 設定的 objectName */
+#home,
+#batch,
+#pdf_tools,
+#history,
+#settings,
+#about {
+    background-color: ${bg_primary};
+}
+
+QToolTip {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_sm};
+    padding: 6px 10px;
+    font-size: ${font_size_caption};
+}
+
+
+/* ───────────────────────────── 文字 / 標題 ───────────────────────────── */
+
+BodyLabel,
+QLabel {
+    color: ${text_primary};
+    background: transparent;
+    border: none;
+}
+
+SubtitleLabel {
+    color: ${text_primary};
+    font-size: ${font_size_title};
+    font-weight: ${font_weight_semibold};
+    background: transparent;
+}
+
+TitleLabel,
+LargeTitleLabel {
+    color: ${text_primary};
+    font-size: ${font_size_h1};
+    font-weight: ${font_weight_semibold};
+    background: transparent;
+}
+
+CaptionLabel {
+    color: ${text_tertiary};
+    font-size: ${font_size_caption};
+    background: transparent;
+}
+
+
+/* ───────────────────────────── 按鈕系統 ───────────────────────────────── */
+
+/* QFluentWidgets PushButton(次要按鈕) */
+PushButton,
+QPushButton {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_md};
+    padding: 6px 16px;
+    font-weight: ${font_weight_medium};
+    min-height: 28px;
+}
+PushButton:hover,
+QPushButton:hover {
+    background-color: ${bg_hover};
+    border-color: ${border_strong};
+}
+PushButton:pressed,
+QPushButton:pressed {
+    background-color: ${bg_pressed};
+    border-color: ${border_strong};
+}
+PushButton:disabled,
+QPushButton:disabled {
+    color: ${text_disabled};
+    background-color: ${bg_subtle};
+    border-color: ${border_subtle};
+}
+
+/* 主要動作按鈕 */
+PrimaryPushButton {
+    background-color: ${accent_primary};
+    color: ${text_on_accent};
+    border: 1px solid ${accent_primary};
+    border-radius: ${radius_md};
+    padding: 8px 20px;
+    font-weight: ${font_weight_semibold};
+    min-height: 32px;
+}
+PrimaryPushButton:hover {
+    background-color: ${accent_hover};
+    border-color: ${accent_hover};
+}
+PrimaryPushButton:pressed {
+    background-color: ${accent_pressed};
+    border-color: ${accent_pressed};
+}
+PrimaryPushButton:disabled {
+    background-color: ${border_subtle};
+    color: ${text_disabled};
+    border-color: ${border_subtle};
+}
+
+/* 透明 / Hyperlink 按鈕 */
+TransparentPushButton,
+HyperlinkButton {
+    background: transparent;
+    color: ${text_link};
+    border: none;
+    padding: 6px 8px;
+}
+TransparentPushButton:hover,
+HyperlinkButton:hover {
+    background-color: ${accent_subtle};
+    color: ${accent_pressed};
+    border-radius: ${radius_sm};
+}
+
+/* Toggle Button */
+ToggleButton {
+    background-color: ${bg_subtle};
+    color: ${text_secondary};
+    border: 1px solid ${border_subtle};
+    border-radius: ${radius_md};
+    padding: 6px 14px;
+}
+ToggleButton:checked {
+    background-color: ${accent_subtle};
+    color: ${accent_primary};
+    border-color: ${accent_primary};
+}
+
+
+/* ───────────────────────────── 輸入元件 ───────────────────────────────── */
+
+QLineEdit,
+LineEdit,
+SearchLineEdit,
+PasswordLineEdit {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_md};
+    padding: 6px 10px;
+    selection-background-color: ${accent_subtle};
+    selection-color: ${text_primary};
+}
+QLineEdit:hover,
+LineEdit:hover,
+SearchLineEdit:hover {
+    border-color: ${border_strong};
+}
+QLineEdit:focus,
+LineEdit:focus,
+SearchLineEdit:focus,
+PasswordLineEdit:focus {
+    border-color: ${border_focus};
+}
+QLineEdit:disabled,
+LineEdit:disabled {
+    color: ${text_disabled};
+    background-color: ${bg_subtle};
+}
+
+QTextEdit,
+PlainTextEdit,
+TextEdit {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_md};
+    padding: 8px;
+    selection-background-color: ${accent_subtle};
+    selection-color: ${text_primary};
+}
+
+QSpinBox,
+SpinBox,
+DoubleSpinBox {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_md};
+    padding: 4px 8px;
+    min-height: 28px;
+}
+QSpinBox:focus,
+SpinBox:focus {
+    border-color: ${border_focus};
+}
+
+
+/* ───────────────────────────── ComboBox ───────────────────────────────── */
+
+ComboBox,
+EditableComboBox,
+QComboBox {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_md};
+    padding: 6px 12px;
+    min-height: 28px;
+}
+ComboBox:hover,
+QComboBox:hover {
+    border-color: ${border_strong};
+    background-color: ${bg_hover};
+}
+ComboBox:focus,
+QComboBox:focus {
+    border-color: ${border_focus};
+}
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+QComboBox QAbstractItemView {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_md};
+    padding: 4px;
+    selection-background-color: ${accent_subtle};
+    selection-color: ${text_primary};
+}
+
+
+/* ───────────────────────────── CheckBox / RadioButton ─────────────────── */
+
+QCheckBox,
+CheckBox {
+    color: ${text_primary};
+    spacing: 8px;
+}
+QCheckBox::indicator,
+CheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid ${border_strong};
+    background-color: ${bg_elevated};
+}
+QCheckBox::indicator:hover,
+CheckBox::indicator:hover {
+    border-color: ${accent_primary};
+}
+QCheckBox::indicator:checked,
+CheckBox::indicator:checked {
+    background-color: ${accent_primary};
+    border-color: ${accent_primary};
+}
+
+QRadioButton,
+RadioButton {
+    color: ${text_primary};
+    spacing: 8px;
+}
+QRadioButton::indicator,
+RadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    border: 1px solid ${border_strong};
+    background-color: ${bg_elevated};
+}
+QRadioButton::indicator:hover,
+RadioButton::indicator:hover {
+    border-color: ${accent_primary};
+}
+QRadioButton::indicator:checked,
+RadioButton::indicator:checked {
+    background-color: ${accent_primary};
+    border-color: ${accent_primary};
+}
+
+
+/* ───────────────────────────── ProgressBar ────────────────────────────── */
+
+QProgressBar,
+ProgressBar,
+IndeterminateProgressBar {
+    background-color: ${bg_subtle};
+    color: ${text_primary};
+    border: none;
+    border-radius: 4px;
+    text-align: center;
+    height: 8px;
+}
+QProgressBar::chunk,
+ProgressBar::chunk {
+    background-color: ${accent_primary};
+    border-radius: 4px;
+}
+
+
+/* ───────────────────────────── 卡片 / 容器 ────────────────────────────── */
+
+CardWidget,
+ElevatedCardWidget,
+SimpleCardWidget {
+    background-color: ${bg_elevated};
+    border: 1px solid ${border_subtle};
+    border-radius: ${radius_xl};
+}
+
+QFrame#FileCard {
+    background-color: ${bg_elevated};
+    border: 1px solid ${border_subtle};
+    border-radius: ${radius_xl};
+}
+QFrame#FileCard:hover {
+    border-color: ${border_default};
+}
+
+QWidget#DropZone {
+    background-color: ${bg_secondary};
+    border: 1px dashed ${border_strong};
+    border-radius: ${radius_xl};
+}
+QWidget#DropZone[state="hover"] {
+    background-color: ${accent_subtle};
+    border-color: ${accent_primary};
+}
+QWidget#DropZone[state="dropping"] {
+    background-color: ${state_success_bg};
+    border: 1px solid ${state_success};
+}
+
+
+/* ───────────────────────────── QTabWidget(PDF 工具分頁) ──────────────── */
+
+QTabWidget::pane {
+    background-color: ${bg_elevated};
+    border: 1px solid ${border_subtle};
+    border-radius: ${radius_lg};
+    padding: 0;
+    top: -1px;
+}
+QTabBar {
+    qproperty-drawBase: 0;
+    background: transparent;
+}
+QTabBar::tab {
+    background: transparent;
+    color: ${text_secondary};
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    padding: 8px 18px;
+    margin-right: 4px;
+    font-weight: ${font_weight_medium};
+}
+QTabBar::tab:hover {
+    color: ${text_primary};
+    background-color: ${bg_hover};
+    border-radius: ${radius_md} ${radius_md} 0 0;
+}
+QTabBar::tab:selected {
+    color: ${accent_primary};
+    background: transparent;
+    border-bottom: 2px solid ${accent_primary};
+}
+
+
+/* ───────────────────────────── QScrollArea(透明背景) ───────────────── */
+
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+QScrollArea > QWidget {
+    background-color: transparent;
+}
+QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+
+/* ───────────────────────────── 滾動條(細,北歐風) ───────────────────── */
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 4px 2px 4px 2px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background-color: ${border_strong};
+    min-height: 24px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background-color: ${text_tertiary};
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    background: transparent;
+}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 2px 4px 2px 4px;
+    border: none;
+}
+QScrollBar::handle:horizontal {
+    background-color: ${border_strong};
+    min-width: 24px;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal:hover {
+    background-color: ${text_tertiary};
+}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+    background: transparent;
+}
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: transparent;
+}
+
+
+/* ───────────────────────────── ListWidget / ListView ─────────────── */
+
+QListWidget,
+QListView,
+ListWidget {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_subtle};
+    border-radius: ${radius_lg};
+    padding: 4px;
+    alternate-background-color: ${bg_subtle};
+    outline: 0;
+}
+QListWidget::item,
+QListView::item,
+ListWidget::item {
+    padding: 8px 12px;
+    border-radius: ${radius_sm};
+    color: ${text_primary};
+}
+QListWidget::item:hover,
+QListView::item:hover,
+ListWidget::item:hover {
+    background-color: ${bg_hover};
+}
+QListWidget::item:selected,
+QListView::item:selected,
+ListWidget::item:selected {
+    background-color: ${accent_subtle};
+    color: ${text_primary};
+}
+
+
+/* ───────────────────────────── 表格(歷史記錄) ─────────────────────── */
+
+QTableWidget,
+TableWidget,
+TableView {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_subtle};
+    border-radius: ${radius_lg};
+    gridline-color: ${border_subtle};
+    selection-background-color: ${accent_subtle};
+    selection-color: ${text_primary};
+    alternate-background-color: ${bg_subtle};
+}
+QTableWidget::item,
+TableWidget::item {
+    padding: 8px;
+    border: none;
+}
+QTableWidget::item:selected,
+TableWidget::item:selected {
+    background-color: ${accent_subtle};
+    color: ${text_primary};
+}
+QHeaderView::section {
+    background-color: ${bg_secondary};
+    color: ${text_secondary};
+    border: none;
+    border-bottom: 1px solid ${border_default};
+    padding: 8px 12px;
+    font-weight: ${font_weight_semibold};
+    font-size: ${font_size_caption};
+}
+
+
+/* ───────────────────────────── 導航列(MSFluentWindow) ───────────────── */
+
+NavigationInterface {
+    background-color: ${bg_secondary};
+    border-right: 1px solid ${border_subtle};
+}
+NavigationPanel {
+    background-color: ${bg_secondary};
+}
+
+/* 導航項目 */
+NavigationPushButton,
+NavigationToolButton {
+    color: ${text_secondary};
+    background: transparent;
+    border-radius: ${radius_md};
+    padding: 6px 10px;
+}
+NavigationPushButton:hover,
+NavigationToolButton:hover {
+    background-color: ${bg_hover};
+    color: ${text_primary};
+}
+NavigationPushButton:checked,
+NavigationToolButton:checked {
+    background-color: ${accent_subtle};
+    color: ${accent_primary};
+}
+
+
+/* ───────────────────────────── 對話框 / 訊息 ────────────────────────── */
+
+QDialog,
+MessageBoxBase {
+    background-color: ${bg_primary};
+    border-radius: ${radius_xl};
+}
+
+InfoBar {
+    background-color: ${bg_elevated};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_lg};
+}
+
+
+/* ───────────────────────────── 分隔線 ─────────────────────────────── */
+
+QFrame[frameShape="4"], /* QFrame.HLine */
+QFrame[frameShape="5"] /* QFrame.VLine */ {
+    background-color: ${border_subtle};
+    border: none;
+    max-height: 1px;
+}
+
+
+/* ───────────────────────────── ToolTip / Menu ───────────────────────── */
+
+QMenu {
+    background-color: ${bg_elevated};
+    color: ${text_primary};
+    border: 1px solid ${border_default};
+    border-radius: ${radius_lg};
+    padding: 4px;
+}
+QMenu::item {
+    padding: 6px 16px;
+    border-radius: ${radius_sm};
+    background: transparent;
+}
+QMenu::item:selected {
+    background-color: ${accent_subtle};
+    color: ${text_primary};
+}
+QMenu::separator {
+    height: 1px;
+    background-color: ${border_subtle};
+    margin: 4px 8px;
+}
+
+QMenuBar {
+    background-color: ${bg_primary};
+    color: ${text_primary};
+    border-bottom: 1px solid ${border_subtle};
+    padding: 2px 4px;
+}
+QMenuBar::item {
+    padding: 6px 12px;
+    background: transparent;
+    border-radius: ${radius_sm};
+}
+QMenuBar::item:selected {
+    background-color: ${bg_hover};
+}
+
+
+/* ───────────────────────────── Slider ───────────────────────────────── */
+
+QSlider::groove:horizontal,
+Slider::groove:horizontal {
+    height: 4px;
+    background: ${border_subtle};
+    border-radius: 2px;
+}
+QSlider::handle:horizontal,
+Slider::handle:horizontal {
+    background: ${accent_primary};
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+QSlider::handle:horizontal:hover {
+    background: ${accent_hover};
+}
