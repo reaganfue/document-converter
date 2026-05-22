@@ -37,6 +37,7 @@ from qfluentwidgets import (
 
 from desktop.controllers.conversion_controller import ConversionController
 from desktop.controllers.history_manager import HistoryManager
+from desktop.controllers.image_tools_controller import ImageToolsController
 from desktop.controllers.notification_manager import NotificationManager
 from desktop.controllers.pdf_tools_controller import PdfToolsController
 from desktop.controllers.settings_manager import SettingsManager
@@ -46,6 +47,7 @@ from desktop.pages.about_page import AboutPage
 from desktop.pages.batch_page import BatchPage
 from desktop.pages.history_page import HistoryPage
 from desktop.pages.home_page import HomePage
+from desktop.pages.image_tools_page import ImageToolsPage
 from desktop.pages.pdf_tools_page import PdfToolsPage
 from desktop.pages.settings_page import SettingsPage
 from desktop.utils.theme import ThemeMode, apply_theme, install_system_theme_listener
@@ -131,15 +133,17 @@ class MainWindowV2(MSFluentWindow):
         )
 
     def _init_controller(self) -> None:
-        """建立 ConversionController + PdfToolsController。"""
+        """建立 ConversionController + PdfToolsController + ImageToolsController。"""
         self.controller = ConversionController(self)
         self.pdf_tools_controller = PdfToolsController(self)
+        self.image_tools_controller = ImageToolsController(self)
 
     def _init_pages(self) -> None:
-        """建立 6 個頁面實例(含 PDF 工具)。"""
+        """建立 7 個頁面實例(含 PDF / Image 工具)。"""
         self.home_page = HomePage(self)
         self.batch_page = BatchPage(self)
         self.pdf_tools_page = PdfToolsPage(self)
+        self.image_tools_page = ImageToolsPage(self)
         self.history_page = HistoryPage(self)
         self.settings_page = SettingsPage(self)
         self.about_page = AboutPage(self)
@@ -174,6 +178,10 @@ class MainWindowV2(MSFluentWindow):
         self.pdf_tools_page.set_controller(self.pdf_tools_controller)
         self.pdf_tools_page.set_managers(**managers)
 
+        # 圖片工具分頁用獨立 controller
+        self.image_tools_page.set_controller(self.image_tools_controller)
+        self.image_tools_page.set_managers(**managers)
+
     def _init_navigation(self) -> None:
         """設定 MSFluentWindow 導航列。
 
@@ -197,6 +205,12 @@ class MainWindowV2(MSFluentWindow):
             self.pdf_tools_page,
             FluentIcon.DOCUMENT,
             "PDF 工具",
+            position=NavigationItemPosition.TOP,
+        )
+        self.addSubInterface(
+            self.image_tools_page,
+            FluentIcon.PHOTO,
+            "圖片工具",
             position=NavigationItemPosition.TOP,
         )
         self.addSubInterface(
@@ -234,12 +248,13 @@ class MainWindowV2(MSFluentWindow):
             page_id: PageID Enum 的字串值(例如 "home" / "pdf_tools")。
         """
         page_map = {
-            PageID.HOME.value:      self.home_page,
-            PageID.BATCH.value:     self.batch_page,
-            PageID.PDF_TOOLS.value: self.pdf_tools_page,
-            PageID.HISTORY.value:   self.history_page,
-            PageID.SETTINGS.value:  self.settings_page,
-            PageID.ABOUT.value:     self.about_page,
+            PageID.HOME.value:        self.home_page,
+            PageID.BATCH.value:       self.batch_page,
+            PageID.PDF_TOOLS.value:   self.pdf_tools_page,
+            PageID.IMAGE_TOOLS.value: self.image_tools_page,
+            PageID.HISTORY.value:     self.history_page,
+            PageID.SETTINGS.value:    self.settings_page,
+            PageID.ABOUT.value:       self.about_page,
         }
         page = page_map.get(page_id)
         if page is None:
@@ -339,9 +354,10 @@ class MainWindowV2(MSFluentWindow):
             (self.home_page, "Ctrl+1"),
             (self.batch_page, "Ctrl+2"),
             (self.pdf_tools_page, "Ctrl+3"),
-            (self.history_page, "Ctrl+4"),
-            (self.settings_page, "Ctrl+5"),
-            (self.about_page, "Ctrl+6"),
+            (self.image_tools_page, "Ctrl+4"),
+            (self.history_page, "Ctrl+5"),
+            (self.settings_page, "Ctrl+6"),
+            (self.about_page, "Ctrl+7"),
         ]
         self._page_shortcuts: list[QShortcut] = []
         for page, seq in page_bindings:

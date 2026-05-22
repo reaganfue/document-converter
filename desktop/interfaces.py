@@ -192,13 +192,14 @@ class NotificationLevel(_EnumCommercial):
 
 
 class PageID(_EnumCommercial):
-    """5 分頁 ID — MainWindowV2 導航路由鍵。"""
+    """分頁 ID — MainWindowV2 導航路由鍵。"""
     HOME = "home"
     BATCH = "batch"
     HISTORY = "history"
     SETTINGS = "settings"
     ABOUT = "about"
     PDF_TOOLS = "pdf_tools"
+    IMAGE_TOOLS = "image_tools"
 
 
 @dataclass
@@ -308,4 +309,33 @@ class PdfToolsControllerSignals(QObject):
     operation_started = Signal(str)             # operation_name: "merge"|"split"|"compress"|"encrypt"|"decrypt"
     operation_progress = Signal(float)          # 0.0–1.0
     operation_completed = Signal(str, object)   # operation_name, result (Path | list[Path] | dict | None)
+    operation_failed = Signal(str, str)         # operation_name, error_message
+
+
+# ============================================================================
+# Image Tools 擴充（W-IMAGE-TOOLS append-only — 不影響既有契約）
+# ============================================================================
+
+class ImageToolsControllerSignals(QObject):
+    """ImageToolsController 對外 Signal 契約。
+
+    生命週期：
+        operation_started → operation_progress×N →
+        (item_status / item_completed)×N →
+        operation_completed | operation_failed
+
+    payload 說明：
+        operation_name (str): "remove_single" | "batch" | "replace_bg" | "filter"
+        result (object):
+            - remove_single / replace_bg / filter: Path（輸出檔路徑）
+            - batch: list[BatchItemResult]
+        item_status (idx, status):
+            status ∈ "started" | "completed" | "failed" | "cancelled"
+    """
+
+    operation_started = Signal(str)             # operation_name
+    operation_progress = Signal(float)          # 0.0–1.0
+    item_status = Signal(int, str)              # idx, status
+    item_completed = Signal(int, object)        # idx, BatchItemResult
+    operation_completed = Signal(str, object)   # operation_name, result
     operation_failed = Signal(str, str)         # operation_name, error_message

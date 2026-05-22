@@ -14,6 +14,9 @@ env/
 uploads/
 outputs/
 
+# Image Tools 預下載模型（~525MB，請執行 scripts/predownload_models.py 重建）
+u2net_models/
+
 # IDE
 .vscode/
 .idea/
