@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80" fill="none"
+     stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <!-- 遠山（最低、最透明） -->
+  <polyline points="0,70 50,20 100,70" opacity="0.2"/>
+  <!-- 中山 -->
+  <polyline points="30,75 100,10 170,75" opacity="0.35"/>
+  <!-- 近山（最高、最實） -->
+  <polyline points="80,78 140,30 200,78" opacity="0.55"/>
+  <!-- 地平線 -->
+  <line x1="0" y1="78" x2="200" y2="78" opacity="0.2" stroke-dasharray="4 6"/>
+</svg>

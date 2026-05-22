@@ -38,12 +38,15 @@ from qfluentwidgets import (
 from desktop.controllers.conversion_controller import ConversionController
 from desktop.controllers.history_manager import HistoryManager
 from desktop.controllers.notification_manager import NotificationManager
+from desktop.controllers.pdf_tools_controller import PdfToolsController
 from desktop.controllers.settings_manager import SettingsManager
 from desktop.controllers.tray_manager import TrayManager
+from desktop.interfaces import PageID
 from desktop.pages.about_page import AboutPage
 from desktop.pages.batch_page import BatchPage
 from desktop.pages.history_page import HistoryPage
 from desktop.pages.home_page import HomePage
+from desktop.pages.pdf_tools_page import PdfToolsPage
 from desktop.pages.settings_page import SettingsPage
 from desktop.utils.theme import ThemeMode, apply_theme, install_system_theme_listener
 
@@ -128,13 +131,15 @@ class MainWindowV2(MSFluentWindow):
         )
 
     def _init_controller(self) -> None:
-        """建立 ConversionController。"""
+        """建立 ConversionController + PdfToolsController。"""
         self.controller = ConversionController(self)
+        self.pdf_tools_controller = PdfToolsController(self)
 
     def _init_pages(self) -> None:
-        """建立 5 個頁面實例。"""
+        """建立 6 個頁面實例(含 PDF 工具)。"""
         self.home_page = HomePage(self)
         self.batch_page = BatchPage(self)
+        self.pdf_tools_page = PdfToolsPage(self)
         self.history_page = HistoryPage(self)
         self.settings_page = SettingsPage(self)
         self.about_page = AboutPage(self)
@@ -142,31 +147,39 @@ class MainWindowV2(MSFluentWindow):
     def _inject_dependencies(self) -> None:
         """向所有頁面注入 controller 與 managers。
 
-        每個 page 的 set_controller / set_managers 方法由 BasePage 定義，
-        各 Page 可覆寫以連接 Signal。
+        共用 ConversionController 的 pages 走 self.controller;
+        PDF 工具分頁則使用獨立的 PdfToolsController。
+        所有頁面都注入相同的 managers 字典(包含 self 作為 navigation manager)。
         """
         managers = {
             "history": self.history_manager,
             "settings": self.settings_manager,
             "notification": self.notification_manager,
             "tray": self.tray_manager,
+            "navigation": self,  # MainWindowV2 提供 navigate_to(page_id) 方法
         }
-        for page in (
+        # 共用 ConversionController 的 pages
+        conversion_pages = (
             self.home_page,
             self.batch_page,
             self.history_page,
             self.settings_page,
             self.about_page,
-        ):
+        )
+        for page in conversion_pages:
             page.set_controller(self.controller)
             page.set_managers(**managers)
+
+        # PDF 工具分頁用獨立 controller
+        self.pdf_tools_page.set_controller(self.pdf_tools_controller)
+        self.pdf_tools_page.set_managers(**managers)
 
     def _init_navigation(self) -> None:
         """設定 MSFluentWindow 導航列。
 
-        主導航（TOP）：首頁 / 批次 / 歷史
-        底部導航（BOTTOM）：設定 / 關於
-        預設頁面：首頁
+        主導航(TOP):首頁 / 批次 / PDF 工具 / 歷史
+        底部導航(BOTTOM):設定 / 關於
+        預設頁面:首頁
         """
         self.addSubInterface(
             self.home_page,
@@ -178,6 +191,12 @@ class MainWindowV2(MSFluentWindow):
             self.batch_page,
             FluentIcon.FOLDER,
             "批次",
+            position=NavigationItemPosition.TOP,
+        )
+        self.addSubInterface(
+            self.pdf_tools_page,
+            FluentIcon.DOCUMENT,
+            "PDF 工具",
             position=NavigationItemPosition.TOP,
         )
         self.addSubInterface(
@@ -201,6 +220,36 @@ class MainWindowV2(MSFluentWindow):
 
         # 預設顯示首頁
         self.switchTo(self.home_page)
+
+    # =========================================================================
+    # Navigation Manager API(供 pages 透過 managers["navigation"] 呼叫)
+    # =========================================================================
+
+    def navigate_to(self, page_id: str) -> None:
+        """根據 PageID.value 切換到對應分頁。
+
+        供 history_page 的「再次轉換」、空態頁的「前往首頁」等情境使用。
+
+        Args:
+            page_id: PageID Enum 的字串值(例如 "home" / "pdf_tools")。
+        """
+        page_map = {
+            PageID.HOME.value:      self.home_page,
+            PageID.BATCH.value:     self.batch_page,
+            PageID.PDF_TOOLS.value: self.pdf_tools_page,
+            PageID.HISTORY.value:   self.history_page,
+            PageID.SETTINGS.value:  self.settings_page,
+            PageID.ABOUT.value:     self.about_page,
+        }
+        page = page_map.get(page_id)
+        if page is None:
+            logger.warning("navigate_to: 未知 page_id=%s", page_id)
+            return
+        try:
+            self.switchTo(page)
+            logger.debug("navigate_to: 切換至 %s", page_id)
+        except Exception as exc:
+            logger.warning("navigate_to(%s) 失敗:%s", page_id, exc)
 
     # =========================================================================
     # Step 1 — Notification → InfoBar
@@ -289,9 +338,10 @@ class MainWindowV2(MSFluentWindow):
         page_bindings = [
             (self.home_page, "Ctrl+1"),
             (self.batch_page, "Ctrl+2"),
-            (self.history_page, "Ctrl+3"),
-            (self.settings_page, "Ctrl+4"),
-            (self.about_page, "Ctrl+5"),
+            (self.pdf_tools_page, "Ctrl+3"),
+            (self.history_page, "Ctrl+4"),
+            (self.settings_page, "Ctrl+5"),
+            (self.about_page, "Ctrl+6"),
         ]
         self._page_shortcuts: list[QShortcut] = []
         for page, seq in page_bindings:

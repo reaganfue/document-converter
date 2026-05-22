@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QItemSelectionModel
+from PySide6.QtCore import Qt, QItemSelectionModel, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -54,6 +54,12 @@ from qfluentwidgets import (
 
 from desktop.interfaces import HistoryRecord, PageID
 from desktop.pages.base_page import BasePage
+from desktop.utils.theme import get_palette
+
+try:
+    from qfluentwidgets import PrimaryPushButton  # type: ignore[import]
+except ImportError:
+    from PySide6.QtWidgets import QPushButton as PrimaryPushButton  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +181,9 @@ def _open_folder(path_str: Optional[str]) -> None:
 class _DetailPanel(QWidget):
     """詳情面板 — 顯示選中記錄的完整資訊與操作按鈕。"""
 
+    # 觸發「一鍵再轉」:payload 為 (source_path_str, target_format)
+    reconvert_requested = Signal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(240)
@@ -207,16 +216,18 @@ class _DetailPanel(QWidget):
         # 錯誤訊息（失敗時顯示）
         self._error_label = QLabel()
         self._error_label.setWordWrap(True)
-        self._error_label.setStyleSheet("color: #e74c3c;")
+        self._error_label.setObjectName("HistoryErrorLabel")
         self._error_label.hide()
         layout.addWidget(self._error_label)
 
         layout.addSpacing(8)
 
-        # 操作按鈕
+        # 操作按鈕 — 一鍵再轉放在最上,鼓勵 reuse
+        self._btn_reconvert = PrimaryPushButton("再次轉換")
         self._btn_open_output = PushButton("開啟結果")
         self._btn_open_source = PushButton("開啟來源")
         self._btn_open_folder = PushButton("開啟資料夾")
+        layout.addWidget(self._btn_reconvert)
         layout.addWidget(self._btn_open_output)
         layout.addWidget(self._btn_open_source)
         layout.addWidget(self._btn_open_folder)
@@ -224,6 +235,7 @@ class _DetailPanel(QWidget):
         layout.addStretch()
 
         # 連接按鈕
+        self._btn_reconvert.clicked.connect(self._on_reconvert)
         self._btn_open_output.clicked.connect(self._on_open_output)
         self._btn_open_source.clicked.connect(self._on_open_source)
         self._btn_open_folder.clicked.connect(self._on_open_folder)
@@ -244,12 +256,32 @@ class _DetailPanel(QWidget):
         self._output_label.setText(record.output_path or "-")
 
         if record.error_message:
+            palette = get_palette()
+            self._error_label.setStyleSheet(f"color: {palette['state_danger']};")
             self._error_label.setText(f"錯誤：{record.error_message}")
             self._error_label.show()
         else:
             self._error_label.hide()
 
         self._btn_open_output.setEnabled(bool(record.output_path))
+
+        # 再次轉換只在來源檔案仍存在時可用
+        src_exists = bool(record.source_path) and Path(record.source_path).exists()
+        self._btn_reconvert.setEnabled(src_exists)
+        if not src_exists:
+            self._btn_reconvert.setToolTip("來源檔案已不存在")
+        else:
+            self._btn_reconvert.setToolTip(
+                f"重新將此檔案轉為 {record.target_format.upper()}"
+            )
+
+    def _on_reconvert(self) -> None:
+        """觸發再次轉換 — 發射 signal,由 HistoryPage 處理。"""
+        if self._record and self._record.source_path:
+            self.reconvert_requested.emit(
+                self._record.source_path,
+                self._record.target_format,
+            )
 
     def _on_open_output(self) -> None:
         if self._record:
@@ -330,6 +362,7 @@ class HistoryPage(BasePage):
 
         # 詳情面板
         self._detail_panel = _DetailPanel()
+        self._detail_panel.reconvert_requested.connect(self._on_reconvert)
         self._splitter.addWidget(self._detail_panel)
         self._splitter.setStretchFactor(0, 3)
         self._splitter.setStretchFactor(1, 1)
@@ -672,6 +705,11 @@ class HistoryPage(BasePage):
 
         menu = QMenu(self)
 
+        src_exists = bool(rec.source_path) and Path(rec.source_path).exists()
+        act_reconvert = menu.addAction(f"再次轉換為 {rec.target_format.upper()}")
+        act_reconvert.setEnabled(src_exists)
+        menu.addSeparator()
+
         act_open_output = menu.addAction("開啟結果")
         act_open_output.setEnabled(bool(rec.output_path))
 
@@ -682,7 +720,9 @@ class HistoryPage(BasePage):
 
         action = menu.exec(self._table.mapToGlobal(pos))
 
-        if action == act_open_output:
+        if action == act_reconvert:
+            self._on_reconvert(rec.source_path, rec.target_format)
+        elif action == act_open_output:
             _open_path(rec.output_path)
         elif action == act_open_source:
             _open_path(rec.source_path)
@@ -690,6 +730,69 @@ class HistoryPage(BasePage):
             _open_folder(rec.output_path or rec.source_path)
         elif action == act_remove:
             self._delete_record(rec.id)
+
+    def _on_reconvert(self, source_path: str, target_format: str) -> None:
+        """處理「再次轉換」:加入 Controller 佇列 + 切換至首頁。
+
+        Args:
+            source_path: 來源檔案絕對路徑字串。
+            target_format: 目標格式(小寫無點)。
+        """
+        if self._controller is None:
+            logger.warning("_on_reconvert: controller 未注入,無法執行")
+            return
+
+        path = Path(source_path) if source_path else None
+        if path is None or not path.exists():
+            InfoBar.error(
+                title="檔案不存在",
+                content=f"來源檔案已找不到:{source_path}",
+                duration=4000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+            return
+
+        try:
+            self._controller.add_files([path], target_format=target_format)
+        except Exception as exc:
+            logger.error("_on_reconvert: add_files 失敗 — %s", exc)
+            InfoBar.error(
+                title="加入佇列失敗",
+                content=str(exc),
+                duration=4000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+            return
+
+        # 切換至首頁
+        nav = self._managers.get("navigation")
+        if nav is not None and hasattr(nav, "navigate_to"):
+            try:
+                nav.navigate_to(PageID.HOME.value)
+            except Exception as exc:
+                logger.debug("_on_reconvert: navigate_to 失敗(忽略):%s", exc)
+
+        # 通知
+        notify = self._managers.get("notification")
+        if notify is not None:
+            try:
+                notify.success(
+                    "已加入轉換佇列",
+                    f"{path.name} → {target_format.upper()}",
+                    duration_ms=3000,
+                )
+            except Exception:
+                pass
+        else:
+            InfoBar.success(
+                title="已加入轉換佇列",
+                content=f"{path.name} → {target_format.upper()}",
+                duration=3000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
 
     def _delete_record(self, record_id: int) -> None:
         """刪除單筆記錄。"""

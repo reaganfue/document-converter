@@ -28,17 +28,23 @@ except ImportError:
     _HAS_FLUENT = False
 
 from desktop.interfaces import ProgressWidgetSignals
+from desktop.utils.theme import get_palette, theme_bus
 
 # 完成/取消訊息停留時間（毫秒）
 _MESSAGE_LINGER_MS = 3000
 
-# 狀態對應樣式（純 Qt fallback）
-_STATE_STYLE: dict[str, str] = {
-    "done":      "color: #16a34a; font-weight: bold;",  # 綠色
-    "cancelled": "color: #ea580c; font-weight: bold;",  # 橘色
-    "running":   "",
-    "idle":      "",
-}
+
+def _state_style(state: str) -> str:
+    """依當前主題回傳對應狀態的內嵌 QSS 樣式字串。"""
+    palette = get_palette()
+    color_map = {
+        "done":      palette["state_success"],
+        "cancelled": palette["state_warning"],
+    }
+    color = color_map.get(state)
+    if color is None:
+        return ""
+    return f"color: {color}; font-weight: 600;"
 
 
 class ProgressWidget(QWidget):
@@ -67,6 +73,14 @@ class ProgressWidget(QWidget):
 
         self._setup_ui()
         self.hide()  # 初始隱藏
+
+        # 主題切換時重套狀態色(若當前在 done/cancelled 態)
+        theme_bus.theme_changed.connect(self._refresh_palette)
+
+    def _refresh_palette(self, _mode: str = "") -> None:
+        """主題變更時重新套用 done / cancelled 狀態的文字色。"""
+        if self._state in ("done", "cancelled"):
+            self._stats_label.setStyleSheet(_state_style(self._state))
 
     # ------------------------------------------------------------------
     # UI 建立
@@ -196,13 +210,13 @@ class ProgressWidget(QWidget):
             self._stats_label.setStyleSheet("")
         elif state == "done":
             self._stats_label.setText("全部完成 ✓")
-            self._stats_label.setStyleSheet(_STATE_STYLE["done"])
+            self._stats_label.setStyleSheet(_state_style("done"))
             self._progress_bar.setValue(100)
             self._pct_label.setText("100%")
             self._linger_timer.start(_MESSAGE_LINGER_MS)
         elif state == "cancelled":
             self._stats_label.setText("已取消")
-            self._stats_label.setStyleSheet(_STATE_STYLE["cancelled"])
+            self._stats_label.setStyleSheet(_state_style("cancelled"))
             self._linger_timer.start(_MESSAGE_LINGER_MS)
         else:
             # 未知狀態視同 idle

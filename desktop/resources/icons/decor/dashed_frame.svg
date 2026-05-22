@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none"
+     stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <!-- 左上菱形 -->
+  <path d="M6 18 L18 6 L30 18 L18 30 Z" opacity="0.3"/>
+  <!-- 右上菱形 -->
+  <path d="M170 6 L182 18 L170 30 L158 18 Z" opacity="0.3"/>
+  <!-- 左下菱形 -->
+  <path d="M6 170 L18 158 L30 170 L18 182 Z" opacity="0.3"/>
+  <!-- 右下菱形 -->
+  <path d="M170 158 L182 170 L170 182 L158 170 Z" opacity="0.3"/>
+  <!-- 上虛線 -->
+  <line x1="30" y1="9" x2="158" y2="9" stroke-dasharray="6 4" opacity="0.3"/>
+  <!-- 下虛線 -->
+  <line x1="30" y1="191" x2="158" y2="191" stroke-dasharray="6 4" opacity="0.3"/>
+  <!-- 左虛線 -->
+  <line x1="9" y1="30" x2="9" y2="158" stroke-dasharray="6 4" opacity="0.3"/>
+  <!-- 右虛線 -->
+  <line x1="191" y1="30" x2="191" y2="158" stroke-dasharray="6 4" opacity="0.3"/>
+</svg>

@@ -216,3 +216,50 @@ C:\...文件轉檔>if errorlevel 1 (
 - **標籤**: #env #windows #batch #cmd #unix-syntax-pollution #bom #regression #cp950
 
 ---
+
+## ERR-20260425-006
+
+- **日期**: 2026-04-25
+- **task_id**: W-FIXBAT（start.bat 啟動失敗三類錯誤）
+- **錯誤類型**: env (Windows 啟動腳本 system PATH 依賴)
+- **錯誤訊息**:
+
+```
+'6' is not recognized as an internal or external command
+'永久免費' is not recognized as an internal or external command
+[錯誤] 未偵測到 Python 3.10 以上版本
+```
+
+- **影響檔案**: `start.bat`
+- **根因分析**:
+  1. **Microsoft Store python stub 干擾**：`start.bat` 依賴 `where python` 確認 Python 存在，再用 `for /f "tokens=2" %v in ('python --version')` 解析版本號。Windows 11 預設安裝 Microsoft Store python stub，`where python` 找到 stub，但 stub 回應格式與真實 Python 不同，導致 `for /f` token 解析失敗，版本變數為空，後續字串拼接出現 `'6' is not recognized`（版本尾碼被視為命令）
+  2. **`chcp 65001` stderr 未抑制**：`chcp 65001 >nul` 只重定向 stdout，stderr 仍輸出（某些環境會輸出 `Active code page: 65001` 或錯誤至 stderr），stderr 混入正常輸出導致 `'永久免費' is not recognized`（UTF-8 中文在 chcp 尚未生效前被 CP950 解讀為亂碼後作為命令執行）
+  3. **兩個根因合力**：版本解析失敗（根因 1）設置 errorlevel=1，觸發「未偵測到 Python 3.10 以上版本」分支
+- **解決方案**:
+  1. **移除 system PATH python 依賴**：改為 venv-only 入口
+     ```bat
+     @echo off
+     chcp 65001 >nul 2>&1
+     setlocal enableextensions
+     set "VENV_PYTHON=%~dp0venv\Scripts\python.exe"
+     if not exist "%VENV_PYTHON%" (
+         echo [錯誤 Error] 找不到虛擬環境 / Virtual environment not found
+         echo 請執行 / Please run: pip install -r requirements.txt
+         pause & exit /b 1
+     )
+     "%VENV_PYTHON%" -m desktop
+     ```
+  2. **`chcp 65001 >nul 2>&1`**：同時抑制 stdout 和 stderr
+  3. **`setlocal enableextensions`**：隔離環境變數，避免影響外部 shell
+  4. **中英雙語錯誤訊息**：codepage 切換失敗時保持可讀性
+- **預防措施**:
+  1. **凡是分發給一般用戶的 `.bat` 啟動腳本，一律使用 venv-only 入口**（`%~dp0venv\Scripts\python.exe`）而非 system PATH python
+  2. **`chcp 65001 >nul 2>&1`**（雙重抑制）是最小安全配方，永遠不應該只有 `>nul`
+  3. **派發 implementer 修改 `.bat` 時，prompt 中明示「venv-only 原則 + 禁止 where python / for /f python --version」**
+  4. 在 Phase 3 self-verification 清單中加入：「是否仍有 `where python` 或 `for /f python --version`？有 → 重構為 venv-only」
+- **是否為已知問題**: 否（與 ERR-20260425-001/005 的編碼問題不同，本 ERR 的根因是 system PATH 依賴 + Microsoft Store stub 干擾）
+- **相關 ERR**: ERR-20260425-001（BOM/編碼）、ERR-20260425-005（Unix 語法污染 + BOM 結論覆蓋）
+- **修復策略**: SP-FIXBAT-001（venv-only 原則）、SP-FIXBAT-002（self-verification 9 項清單）
+- **標籤**: #env #windows #batch #venv #microsoft-store-python #system-path #for-f #chcp #stderr
+
+---
