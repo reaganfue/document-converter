@@ -20,6 +20,9 @@ ROOT = Path(SPECPATH)
 datas = [
     # 桌面應用資源（圖示、QSS）
     (str(ROOT / 'desktop' / 'resources'), 'desktop/resources'),
+    # W-IMAGE-TOOLS: rembg 預下載模型（執行 scripts/predownload_models.py 後存在）
+    # 若目錄不存在則打包前需先跑預下載腳本
+    (str(ROOT / 'u2net_models'), 'u2net_models'),
 ]
 
 # ─────────────────────────────────────────────
@@ -44,6 +47,7 @@ hiddenimports = [
     'converters.markdown_converter',
     'converters.txt_converter',
     'converters.image_converter',
+    'converters.image_tools',
 
     # ── desktop 套件 ──
     'desktop',
@@ -66,6 +70,7 @@ hiddenimports = [
     'desktop.controllers.notification_manager',
     'desktop.controllers.history_manager',
     'desktop.controllers.tray_manager',
+    'desktop.controllers.image_tools_controller',
 
     # ── desktop pages（W-COMMERCIAL 5 分頁） ──
     'desktop.pages',
@@ -77,6 +82,7 @@ hiddenimports = [
     'desktop.pages.about_page',
     'desktop.pages.components',
     'desktop.pages.components.stats_bar',
+    'desktop.pages.image_tools_page',
 
     # ── desktop database（SQLite 歷史記錄層） ──
     'desktop.database',
@@ -152,6 +158,27 @@ hiddenimports = [
     'sqlite3',
     'csv',
     'json',
+
+    # ── W-IMAGE-TOOLS: rembg / onnxruntime / 影像處理 ──
+    'rembg',
+    'rembg.bg',
+    'rembg.session_factory',
+    'rembg.sessions',
+    'rembg.sessions.u2net',
+    'rembg.sessions.u2net_human_seg',
+    'rembg.sessions.isnet_general_use',
+    'onnxruntime',
+    'onnxruntime.capi',
+    'onnxruntime.capi._pybind_state',
+    'numpy',
+    'pymatting',
+    'pymatting.alpha',
+    'pymatting.alpha.estimate_alpha_cf',
+    'scipy',
+    'scipy.ndimage',
+    'skimage',
+    'skimage.io',
+    'numba',
 
     # ── qfluentwidgets 所有子模組 ──
 ] + _qfw_submodules
