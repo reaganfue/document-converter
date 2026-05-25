@@ -51,6 +51,7 @@ from desktop.pages.image_tools_page import ImageToolsPage
 from desktop.pages.pdf_tools_page import PdfToolsPage
 from desktop.pages.settings_page import SettingsPage
 from desktop.utils.theme import ThemeMode, apply_theme, install_system_theme_listener
+from desktop.widgets.close_choice_dialog import CloseChoiceDialog
 
 logger = logging.getLogger(__name__)
 
@@ -481,17 +482,31 @@ class MainWindowV2(MSFluentWindow):
 
         流程：
             - _force_quit=True（從 _real_quit / Ctrl+Q 觸發）→ 直接關閉
-            - minimize_to_tray=True 且 close_action="tray" → 隱藏至托盤
+            - close_action="ask"  → 彈窗詢問，依使用者選擇進入 tray / quit 分支
+            - close_action="tray" 且 minimize_to_tray=True → 隱藏至托盤
             - 否則 → 真正結束（_teardown）
         """
         if self._force_quit:
             self._teardown(event)
             return
 
-        minimize = self.settings_manager.get("minimize_to_tray", True)
-        close_action = self.settings_manager.get("close_action", "tray")
+        close_action = self.settings_manager.get("close_action", "ask")
 
-        if minimize and close_action == "tray":
+        # 第一道：ask 分支彈窗,解析後 fall through 到對應分支
+        if close_action == "ask":
+            dialog = CloseChoiceDialog(self)
+            if not dialog.exec():
+                # ESC 取消 → 不關閉應用
+                event.ignore()
+                return
+            choice = dialog.choice or "tray"
+            if dialog.remember:
+                self.settings_manager.set("close_action", choice)
+            close_action = choice
+
+        minimize = self.settings_manager.get("minimize_to_tray", True)
+
+        if close_action == "tray" and minimize:
             event.ignore()
             self.hide()
             # 首次最小化至托盤：顯示氣泡提示
@@ -500,7 +515,7 @@ class MainWindowV2(MSFluentWindow):
                 try:
                     self.tray_manager.show_message(
                         "文件轉檔已最小化到系統匣",
-                        "雙擊托盤圖示可重新開啟視窗",
+                        "雙擊托盤圖示可重新開啟視窗；右鍵選「結束」可完整關閉。",
                     )
                 except Exception:
                     logger.debug("tray show_message 失敗（忽略）", exc_info=True)
