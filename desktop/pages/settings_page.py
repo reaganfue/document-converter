@@ -243,7 +243,7 @@ class SettingsPage(BasePage):
             "切換",
             FluentIcon.CLOSE,
             "關閉按鈕行為",
-            "最小化到匣 / 結束程式（點擊循環切換）",
+            "每次詢問 / 最小化到匣 / 結束程式（點擊循環切換）",
         )
         self._close_action_card.clicked.connect(self._on_toggle_close_action)
 
@@ -409,8 +409,12 @@ class SettingsPage(BasePage):
         sm = self._settings_manager
         if sm is None:
             return
-        action_map = {"tray": "最小化到系統匣", "quit": "結束程式"}
-        current = sm.get("close_action", "tray")
+        action_map = {
+            "ask": "每次詢問",
+            "tray": "最小化到系統匣",
+            "quit": "結束程式",
+        }
+        current = sm.get("close_action", "ask")
         self._close_action_card.setContent(action_map.get(current, current))
 
     def _on_setting_changed(self, key: str, value: object) -> None:
@@ -466,12 +470,13 @@ class SettingsPage(BasePage):
             logger.warning("即時套用主題失敗：%s", exc)
 
     def _on_toggle_close_action(self) -> None:
-        """切換關閉行為：tray ↔ quit。"""
+        """循環切換關閉行為：ask → tray → quit → ask。"""
         sm = self._settings_manager
         if sm is None:
             return
-        current = sm.get("close_action", "tray")
-        next_action = "quit" if current == "tray" else "tray"
+        cycle = {"ask": "tray", "tray": "quit", "quit": "ask"}
+        current = sm.get("close_action", "ask")
+        next_action = cycle.get(current, "ask")
         self._on_setting_changed("close_action", next_action)
         self._update_close_action_label()
 

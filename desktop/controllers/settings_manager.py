@@ -56,7 +56,7 @@ DEFAULTS: dict[str, Any] = {
 
     # === 系統整合 ===
     "minimize_to_tray": True,             # CEO Q5
-    "close_action": "tray",              # "tray" | "quit"
+    "close_action": "ask",                # "ask" | "tray" | "quit"
 
     # === 進階 ===
     "enable_com_fallback": True,          # CEO Q4：COM 降級 (docx2pdf)

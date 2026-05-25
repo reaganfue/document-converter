@@ -15,12 +15,17 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QIcon
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
 from desktop.main_window_v2 import MainWindowV2 as MainWindow  # W-COMMERCIAL Round 2: 切換至商用版視窗
 
 logger = logging.getLogger(__name__)
+
+# Windows-only single-instance socket 名稱（QSettings org/app 已固化此命名）
+_SINGLE_INSTANCE_KEY = "DocConverter_SingleInstance_v1"
 
 
 def main() -> int:
@@ -29,10 +34,11 @@ def main() -> int:
     啟動流程：
         1. 建立 QApplication 並設定應用元資料
         2. 設定應用程式圖示
-        3. 讀取已儲存的主題模式並套用
-        4. 若主題為「跟隨系統」，安裝系統主題監聽器
-        5. 建立並顯示 MainWindow
-        6. 進入 Qt 事件迴圈
+        3. Single-instance 檢查：若已有實例 → 通知顯示後退出
+        4. 讀取已儲存的主題模式並套用
+        5. 若主題為「跟隨系統」，安裝系統主題監聽器
+        6. 建立並顯示 MainWindow
+        7. 進入 Qt 事件迴圈
 
     Returns:
         Qt 事件迴圈的退出碼（0 表示正常退出）。
@@ -51,13 +57,70 @@ def main() -> int:
     elif svg_path.exists():
         app.setWindowIcon(QIcon(str(svg_path)))
 
+    # Single-instance lock：已有實例運行則通知後退出
+    server = _claim_single_instance()
+    if server is None:
+        logger.info("文件轉檔已在背景執行，已通知既有實例顯示視窗")
+        return 0
+
     # 套用主題（從 QSettings 讀取；預設跟隨系統）
     _apply_startup_theme(app)
 
     window = MainWindow()
+
+    # 將 single-instance server 的新連線事件導向 window.show + raise
+    server.newConnection.connect(lambda: _handle_show_request(server, window))
+
     window.show()
 
     return app.exec()
+
+
+def _claim_single_instance() -> QLocalServer | None:
+    """嘗試佔有 single-instance socket。
+
+    回傳 QLocalServer 表示本實例為首發；回傳 None 表示已有實例運行
+    （並已透過 socket 通知它顯示視窗）。
+
+    Returns:
+        QLocalServer 實例（必須由呼叫方保持參考避免 GC），或 None（已有實例）。
+    """
+    probe = QLocalSocket()
+    probe.connectToServer(_SINGLE_INSTANCE_KEY)
+    if probe.waitForConnected(500):
+        probe.write(QByteArray(b"show\n"))
+        probe.flush()
+        probe.waitForBytesWritten(500)
+        probe.disconnectFromServer()
+        return None
+
+    # 清理可能殘留的 socket 檔案（前一個實例異常終止時 socket 不會自動清掉）
+    QLocalServer.removeServer(_SINGLE_INSTANCE_KEY)
+
+    server = QLocalServer()
+    if not server.listen(_SINGLE_INSTANCE_KEY):
+        logger.warning(
+            "single-instance server 建立失敗：%s — 將以無 lock 模式繼續",
+            server.errorString(),
+        )
+    return server
+
+
+def _handle_show_request(server: QLocalServer, window: MainWindow) -> None:
+    """收到第二次啟動的「show」訊號 → 從托盤/最小化恢復視窗。"""
+    sock = server.nextPendingConnection()
+    if sock is None:
+        return
+    sock.waitForReadyRead(500)
+    sock.readAll()  # drain（不解析內容；目前只支援單一 show 命令）
+    sock.disconnectFromServer()
+    try:
+        window.showNormal()
+        window.raise_()
+        window.activateWindow()
+        logger.debug("已從 single-instance 訊號恢復視窗")
+    except Exception:
+        logger.warning("恢復視窗失敗", exc_info=True)
 
 
 def _apply_startup_theme(app: QApplication) -> None:
