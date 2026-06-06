@@ -22,11 +22,16 @@ from converters.pdf_tools import (
     PdfCorruptedError,
     PdfPasswordError,
     PdfToolError,
+    apply_text_edits,
+    check_edit_warnings,
     compress_pdf,
     decrypt_pdf,
     encrypt_pdf,
+    extract_text_spans,
     get_pdf_info,
+    measure_overflow,
     merge_pdfs,
+    render_page_png,
     split_pdf,
 )
 from desktop.interfaces import PdfToolsControllerSignals
@@ -248,3 +253,93 @@ class PdfToolsController(QObject):
             PdfToolError / PdfCorruptedError — 呼叫方負責處理。
         """
         return get_pdf_info(input_path)
+
+    # -------------------------------------------------------------------------
+    # 文字小修（box-level 編輯）
+    # -------------------------------------------------------------------------
+
+    def extract_spans(self, input_path: Path, page_num: int) -> list[dict]:
+        """同步讀取指定頁的可編輯文字段落（不啟動 worker）。
+
+        Args:
+            input_path: 來源 PDF 路徑。
+            page_num:   頁碼（0-indexed）。
+
+        Returns:
+            list[dict] — 每段含 index/text/font/size/color/edit_font_exact/bbox。
+            詳見 converters.pdf_tools.extract_text_spans。
+
+        Raises:
+            PdfToolError / PdfPasswordError / PdfCorruptedError — 呼叫方負責處理。
+        """
+        return extract_text_spans(input_path, page_num)
+
+    def render_page(self, input_path: Path, page_num: int, scale: float = 2.0) -> bytes:
+        """同步渲染指定頁為 PNG bytes（不啟動 worker），供 UI 預覽。
+
+        Args:
+            input_path: 來源 PDF 路徑。
+            page_num:   頁碼（0-indexed）。
+            scale:      渲染倍率（2.0 ≈ 144 dpi）。
+
+        Returns:
+            PNG 影像 bytes。
+
+        Raises:
+            PdfToolError / PdfPasswordError / PdfCorruptedError — 呼叫方負責處理。
+        """
+        return render_page_png(input_path, page_num, scale)
+
+    @Slot(Path, Path, list)
+    def apply_text_edits_async(
+        self,
+        input_path: Path,
+        output_path: Path,
+        edits: list[dict],
+    ) -> None:
+        """非同步套用一批文字替換並另存。
+
+        operation_name="edit_text"；完成後 operation_completed 回傳
+        {"edited_count": int, "overflow_count": int}。
+
+        Args:
+            input_path:  來源 PDF 路徑。
+            output_path: 輸出 PDF 路徑。
+            edits:       [{"page": int, "index": int, "new_text": str}, ...]。
+        """
+        self._start_worker(
+            "edit_text",
+            apply_text_edits,
+            {"input_path": input_path, "output_path": output_path, "edits": edits},
+        )
+
+    def measure_overflow(
+        self,
+        new_text: str,
+        pdf_font_name: str,
+        fontsize: float,
+        max_width: float,
+    ) -> bool:
+        """同步估算新文字是否爆框（供 UI 即時標紅，不啟動 worker）。
+
+        Args:
+            new_text:      要填入的新文字。
+            pdf_font_name: 原 span 字型名。
+            fontsize:      字級（pt）。
+            max_width:     原 span 框寬（pt）。
+
+        Returns:
+            True 表示會爆框。
+        """
+        return measure_overflow(new_text, pdf_font_name, fontsize, max_width)
+
+    def check_edit_warnings(self, input_path: Path) -> dict:
+        """同步檢查編輯前風險（禁修改權限 / 數位簽章），供 UI 揭露。
+
+        Args:
+            input_path: 來源 PDF 路徑。
+
+        Returns:
+            {"can_modify": bool, "has_signature": bool}
+        """
+        return check_edit_warnings(input_path)
