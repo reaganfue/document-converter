@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import unicodedata
 from pathlib import Path
 from typing import Callable
 
@@ -843,5 +844,478 @@ def get_pdf_info(input_path: Path) -> dict:
         raise PdfCorruptedError(
             f"get_pdf_info 讀取元資訊失敗（{input_path.name}）: {exc}"
         ) from exc
+    finally:
+        doc.close()
+
+
+# ---------------------------------------------------------------------------
+# 文字小修（box-level 編輯）
+#
+# 定位：對等長 / 變短的中文小修（金額、日期、錯字、姓名）。
+# 不做跨段重排（reflow）—— PDF 無文字流，改更長會爆框，僅標警告不阻止。
+# 作法：抹除原文字 span（redaction）後，以偵測到的字型於原 baseline 蓋上新字。
+# ---------------------------------------------------------------------------
+
+# 常見 PDF 中文字型名（去 subset 前綴、去空白後）→ Windows 字型檔。
+# 命中即用同款字型蓋字（品質佳）；未命中才 fallback（字型會略不一致）。
+_PDF_FONT_TO_WINDOWS: dict[str, str] = {
+    "dfkai": "kaiu.ttf", "kaiu": "kaiu.ttf", "標楷體": "kaiu.ttf", "楷": "kaiu.ttf",
+    "pmingliu": "mingliu.ttc", "mingliu": "mingliu.ttc",
+    "新細明體": "mingliu.ttc", "細明體": "mingliu.ttc",
+    "microsoftjhenghei": "msjh.ttc", "msjh": "msjh.ttc",
+    "jhenghei": "msjh.ttc", "微軟正黑體": "msjh.ttc",
+    "microsoftyahei": "msyh.ttc", "msyh": "msyh.ttc", "yahei": "msyh.ttc",
+    "simsun": "simsun.ttc", "nsimsun": "simsun.ttc", "宋体": "simsun.ttc", "宋體": "simsun.ttc",
+    "dengxian": "msjh.ttc", "等線": "msjh.ttc", "等线": "msjh.ttc",
+    "simhei": "simhei.ttf", "黑体": "simhei.ttf", "黑體": "simhei.ttf",
+}
+_FONTS_DIR = Path(r"C:\Windows\Fonts")
+_FALLBACK_FONT = "msjh.ttc"          # 微軟正黑：未命中時最百搭的中文字型
+_OVERFLOW_TOLERANCE_PT = 1.0          # 新字寬度超過原框多少 pt 才算爆框
+
+
+def _int_to_rgb(color: int) -> tuple[float, float, float]:
+    """PyMuPDF span color（sRGB int）轉 (r, g, b)，分量範圍 0.0–1.0。"""
+    return ((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255
+
+
+def _resolve_edit_font(pdf_font_name: str) -> tuple[str, bool]:
+    """將 PDF span 的字型名對應到可用於蓋字的 Windows 字型檔。
+
+    處理 subset 前綴（"ABCDEF+DFKai-SB" → "DFKai-SB"）與常見命名變體。
+
+    Args:
+        pdf_font_name: span["font"] 取得的原始字型名。
+
+    Returns:
+        (fontfile 絕對路徑, exact)；exact=True 表示命中同款字型（品質佳），
+        False 表示退回 fallback 字型（字型會略有不一致）。
+    """
+    raw = pdf_font_name or ""
+    # 去 subset 前綴
+    if "+" in raw:
+        raw = raw.split("+", 1)[-1]
+    key = re.sub(r"[\s\-_,.]", "", raw).lower()
+
+    for token, fname in _PDF_FONT_TO_WINDOWS.items():
+        if token and token in key:
+            path = _FONTS_DIR / fname
+            if path.exists():
+                return str(path), True
+
+    # 未命中：依名稱語意選 serif/sans，避免 serif 內文被換成 sans
+    if any(t in key for t in ("ming", "song", "serif", "宋", "明")):
+        serif = _FONTS_DIR / "mingliu.ttc"
+        if serif.exists():
+            return str(serif), False
+    return str(_FONTS_DIR / _FALLBACK_FONT), False
+
+
+def _iter_editable_spans(page: "fitz.Page") -> list[dict]:
+    """遍歷頁面所有「有意義」的文字 span，回傳穩定排序的清單。
+
+    extract_text_spans 與 apply_text_edits 共用此函式，確保兩邊的 index 對齊
+    （同一份 PDF、同一頁，第 N 個可編輯 span 永遠指向同一段文字）。
+
+    Args:
+        page: 已開啟的 fitz.Page。
+
+    Returns:
+        [{index, text, font, size, color(int), bbox(tuple), origin(tuple)}, ...]，
+        略過純空白 span。
+    """
+    spans: list[dict] = []
+    data = page.get_text("dict")
+    idx = 0
+    for block in data.get("blocks", []):
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                text = span.get("text", "")
+                if not text.strip():
+                    continue
+                spans.append({
+                    "index": idx,
+                    "text": text,
+                    "font": span.get("font", ""),
+                    "size": round(float(span.get("size", 12.0)), 1),
+                    "color": int(span.get("color", 0)),
+                    "bbox": tuple(span["bbox"]),
+                    "origin": tuple(span["origin"]),
+                })
+                idx += 1
+    return spans
+
+
+def extract_text_spans(input_path: Path, page_num: int) -> list[dict]:
+    """讀取指定頁的所有可編輯文字段落，供 UI 列出與編輯。
+
+    Args:
+        input_path: 來源 PDF 路徑。
+        page_num:   頁碼（0-indexed）。
+
+    Returns:
+        每段一個 dict，欄位：
+        ::
+
+            {
+                "index": int,            # 該頁可編輯 span 的穩定序號
+                "text": str,             # 原始文字
+                "font": str,             # 原 PDF 字型名
+                "size": float,           # 字級（pt）
+                "color": int,            # sRGB 整數
+                "edit_font_exact": bool, # 蓋字是否能用同款字型（False=fallback）
+                "bbox": tuple,           # 包圍框 (x0, y0, x1, y1)
+            }
+
+    Raises:
+        PdfToolError: 檔案不存在或頁碼超出範圍。
+        PdfPasswordError: PDF 受密碼保護。
+        PdfCorruptedError: PDF 損壞。
+    """
+    doc = _open_pdf(input_path)
+    try:
+        if doc.needs_pass:
+            raise PdfPasswordError(f"PDF 受密碼保護，請先解密：{input_path.name}")
+        if page_num < 0 or page_num >= len(doc):
+            raise PdfToolError(f"頁碼超出範圍：{page_num}（共 {len(doc)} 頁）")
+
+        result: list[dict] = []
+        for sp in _iter_editable_spans(doc[page_num]):
+            fontfile, exact = _resolve_edit_font(sp["font"])
+            # 新細明/宋體 ttc 的 face0 是全形等寬(MingLiU/SimSun)，與 proportional 原型不同；
+            # 該段含半形 ASCII 時寬度會偏，誠實降級為「替代」不謊報同款
+            if exact and Path(fontfile).name in ("mingliu.ttc", "simsun.ttc"):
+                if any(ord(c) < 128 and c.strip() for c in sp["text"]):
+                    exact = False
+            result.append({
+                "index": sp["index"],
+                "text": sp["text"],
+                "font": sp["font"],
+                "size": sp["size"],
+                "color": sp["color"],
+                "edit_font_exact": exact,
+                "bbox": sp["bbox"],
+            })
+        return result
+    except PdfToolError:
+        raise
+    except Exception as exc:
+        raise PdfCorruptedError(f"讀取文字段落失敗（{input_path.name}）: {exc}") from exc
+    finally:
+        doc.close()
+
+
+def apply_text_edits(
+    input_path: Path,
+    output_path: Path,
+    edits: list[dict],
+    progress_callback: Callable[[float], None] | None = None,
+) -> dict:
+    """套用一批文字替換並另存新 PDF。
+
+    每筆替換：抹除原 span（白底 redaction）→ 以偵測到的字型在原 baseline 蓋上新字。
+    僅替換指定 span，不影響其他內容；改更長者照樣寫入但回報爆框數。
+
+    Args:
+        input_path:  來源 PDF 路徑。
+        output_path: 輸出 PDF 路徑。
+        edits:       [{"page": int, "index": int, "new_text": str}, ...]。
+                     index 對應 extract_text_spans 回傳的同名欄位。
+        progress_callback: 進度回呼（0.0–1.0）。
+
+    Returns:
+        {"edited_count": int, "overflow_count": int}。
+
+    Raises:
+        PdfToolError: 檔案不存在 / 無有效替換 / 套用失敗。
+        PdfPasswordError: PDF 受密碼保護。
+        PdfCorruptedError: PDF 損壞。
+    """
+    import fitz
+
+    if output_path.resolve() == input_path.resolve():
+        raise PdfToolError("輸出檔不可與來源 PDF 相同，請另選檔名")
+
+    valid = [e for e in edits if str(e.get("new_text", "")) != ""]
+    if not valid:
+        raise PdfToolError("沒有任何要套用的文字變更")
+
+    doc = _open_pdf(input_path)
+    try:
+        if doc.needs_pass:
+            raise PdfPasswordError(f"PDF 受密碼保護，請先解密：{input_path.name}")
+
+        by_page: dict[int, list[dict]] = {}
+        for e in valid:
+            by_page.setdefault(int(e["page"]), []).append(e)
+
+        total = len(valid)
+        done = 0
+        edited = 0
+        overflow = 0
+        off_page_n = 0
+        skipped = 0
+
+        for page_num, page_edits in by_page.items():
+            if page_num < 0 or page_num >= len(doc):
+                continue
+            page = doc[page_num]
+            span_list = _iter_editable_spans(page)
+
+            # 階段 1：先收集樣式（redaction 後 text dict 即消失）
+            plans: list[dict] = []
+            for e in page_edits:
+                idx = int(e["index"])
+                if idx < 0 or idx >= len(span_list):
+                    continue
+                sp = span_list[idx]
+                expected = e.get("original")
+                if expected is not None and (
+                    unicodedata.normalize("NFKC", sp["text"])
+                    != unicodedata.normalize("NFKC", str(expected))
+                ):
+                    skipped += 1  # 原文已變動（編輯期間檔案被改）→ 跳過避免改錯段落
+                    continue
+                new_text = _normalize_inline(e["new_text"])
+                fontfile, _exact = _resolve_edit_font(sp["font"])
+                rect = fitz.Rect(sp["bbox"])
+                try:
+                    new_w = fitz.Font(fontfile=fontfile).text_length(
+                        new_text, fontsize=sp["size"]
+                    )
+                except Exception:
+                    new_w = rect.width  # 量測失敗時不誤判爆框
+                plans.append({
+                    "rect": rect,
+                    "origin": fitz.Point(sp["origin"]),
+                    "size": sp["size"],
+                    "color": _int_to_rgb(sp["color"]),
+                    "new_text": new_text,
+                    "fontfile": fontfile,
+                    "overflow": new_w > rect.width + _OVERFLOW_TOLERANCE_PT,
+                    "off_page": (rect.x0 + new_w) > page.rect.x1 + _OVERFLOW_TOLERANCE_PT,
+                })
+
+            # 階段 2：抹除（偵測背景色填充，避免在底色/網底上挖白洞）
+            for p in plans:
+                bg = _detect_bg_color(page, p["rect"])
+                if bg is None:
+                    page.add_redact_annot(p["rect"])            # 非純色背景：不填，露出底層圖形
+                else:
+                    page.add_redact_annot(p["rect"], fill=bg)
+            try:
+                page.apply_redactions(
+                    images=fitz.PDF_REDACT_IMAGE_NONE,
+                    graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                )
+            except (TypeError, AttributeError):
+                try:
+                    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+                except (TypeError, AttributeError):
+                    page.apply_redactions()
+
+            # 階段 3：以唯一 fontname 逐段蓋字（唯一 tag 避免 subset 快取衝突 →
+            #          這是 spike「金變框」的根因，獨立 tag 後每段字集完整嵌入）
+            for i, p in enumerate(plans):
+                page.insert_text(
+                    p["origin"], p["new_text"],
+                    fontname=f"edit_{page_num}_{i}",
+                    fontfile=p["fontfile"],
+                    fontsize=p["size"],
+                    color=p["color"],
+                )
+                edited += 1
+                if p["overflow"]:
+                    overflow += 1
+                if p.get("off_page"):
+                    off_page_n += 1
+                done += 1
+                _fire_progress(progress_callback, done / total)
+
+        if edited == 0:
+            raise PdfToolError("指定的文字段落都無法定位（PDF 可能已被改動）")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            # 關鍵：不 subset 則每段唯一 fontname 各內嵌整顆 CJK 字型 → 檔案爆增數百倍
+            doc.subset_fonts()
+        except Exception:
+            pass
+        doc.save(str(output_path), garbage=4, deflate=True)
+        _fire_progress(progress_callback, 1.0)
+        return {
+            "edited_count": edited,
+            "overflow_count": overflow,
+            "off_page_count": off_page_n,
+            "skipped_count": skipped,
+        }
+
+    except PdfToolError:
+        raise
+    except Exception as exc:
+        raise PdfToolError(f"套用文字編輯失敗（{input_path.name}）: {exc}") from exc
+    finally:
+        doc.close()
+
+
+def render_page_png(input_path: Path, page_num: int, scale: float = 2.0) -> bytes:
+    """將指定頁渲染成 PNG bytes，供 UI 預覽。
+
+    Args:
+        input_path: 來源 PDF 路徑。
+        page_num:   頁碼（0-indexed）。
+        scale:      渲染倍率（2.0 ≈ 144 dpi）。
+
+    Returns:
+        PNG 影像的 bytes。
+
+    Raises:
+        PdfToolError: 檔案不存在或頁碼超出範圍。
+        PdfPasswordError: PDF 受密碼保護。
+        PdfCorruptedError: PDF 損壞。
+    """
+    import fitz
+
+    doc = _open_pdf(input_path)
+    try:
+        if doc.needs_pass:
+            raise PdfPasswordError(f"PDF 受密碼保護，請先解密：{input_path.name}")
+        if page_num < 0 or page_num >= len(doc):
+            raise PdfToolError(f"頁碼超出範圍：{page_num}（共 {len(doc)} 頁）")
+        pix = doc[page_num].get_pixmap(matrix=fitz.Matrix(scale, scale))
+        return pix.tobytes("png")
+    except PdfToolError:
+        raise
+    except Exception as exc:
+        raise PdfCorruptedError(f"渲染頁面失敗（{input_path.name}）: {exc}") from exc
+    finally:
+        doc.close()
+
+
+def measure_overflow(
+    new_text: str,
+    pdf_font_name: str,
+    fontsize: float,
+    max_width: float,
+) -> bool:
+    """估算新文字以蓋字字型排版後是否超出原框寬度（供 UI 即時警告）。
+
+    與 apply_text_edits 內部的爆框判斷使用同一套字型解析與容差，
+    確保 UI 預先標示的爆框與實際輸出一致。
+
+    Args:
+        new_text:      要填入的新文字。
+        pdf_font_name: 原 span 字型名（決定蓋字字型）。
+        fontsize:      字級（pt）。
+        max_width:     原 span 框寬（pt）。
+
+    Returns:
+        True 表示會爆框（超出容差 _OVERFLOW_TOLERANCE_PT）。
+    """
+    new_text = _normalize_inline(new_text)
+    if not new_text:
+        return False
+    import fitz
+
+    fontfile, _ = _resolve_edit_font(pdf_font_name)
+    try:
+        width = fitz.Font(fontfile=fontfile).text_length(new_text, fontsize=fontsize)
+    except Exception:
+        return False
+    return width > max_width + _OVERFLOW_TOLERANCE_PT
+
+
+def _normalize_inline(text) -> str:
+    """把換行 / Tab 正規化為單一空白。
+
+    小修是單行替換；若 new_text 夾帶 \\r\\n\\t（常見於從 Word/網頁複製），
+    insert_text 會讓後半段文字垂直流到下一行壓爛下方內容，且 text_length
+    對換行無感、爆框偵測不到。故在 apply 與 measure 入口統一正規化。
+    """
+    return re.sub(r"[\r\n\t]+", " ", str(text))
+
+
+def _detect_bg_color(
+    page: "fitz.Page",
+    rect: "fitz.Rect",
+    scale: int = 4,
+    white_thresh: float = 0.95,
+) -> tuple | None:
+    """偵測 span 框的背景色，供 redaction 填充以避免在底色上挖白洞。
+
+    取 bbox 上下緣外各一條像素（避開字身），算眾數色：
+      - 接近白 → 回 (1,1,1)（白底維持原行為）
+      - 單一純色（眾數佔比夠高）→ 回該色
+      - 非單一純色（漸層/圖片/文字殘影，眾數佔比低）→ 回 None
+        （呼叫端改用「不填」redaction，露出底層圖形且仍移除文字）
+
+    Args:
+        page:         span 所在頁（須在 apply_redactions 之前呼叫，像素才是原始背景）。
+        rect:         span 包圍框。
+        scale:        取樣渲染倍率。
+        white_thresh: 各分量 ≥ 此值視為白。
+
+    Returns:
+        (r, g, b) 0–1，或 None（非純色背景）。
+    """
+    import fitz
+    from collections import Counter
+
+    r = fitz.Rect(rect)
+    probes = [
+        fitz.Rect(r.x0, max(0.0, r.y0 - 4), r.x1, max(0.1, r.y0 - 1)),
+        fitz.Rect(r.x0, r.y1 + 1, r.x1, r.y1 + 4),
+    ]
+    counter: Counter = Counter()
+    for pr in probes:
+        if pr.width <= 0 or pr.height <= 0:
+            continue
+        try:
+            pix = page.get_pixmap(clip=pr, matrix=fitz.Matrix(scale, scale))
+        except Exception:
+            continue
+        for y in range(pix.height):
+            for x in range(pix.width):
+                counter[pix.pixel(x, y)[:3]] += 1
+
+    if not counter:
+        return (1.0, 1.0, 1.0)
+    mode, mode_n = counter.most_common(1)[0]
+    total = sum(counter.values())
+    if mode_n / total < 0.6:          # 背景非單一純色 → 不填，露出底層
+        return None
+    color = tuple(c / 255 for c in mode)
+    if all(c >= white_thresh for c in color):
+        return (1.0, 1.0, 1.0)
+    return color
+
+
+def check_edit_warnings(input_path: Path) -> dict:
+    """檢查編輯前應提醒使用者的風險（不阻止編輯，僅揭露）。
+
+    Args:
+        input_path: 來源 PDF 路徑。
+
+    Returns:
+        {"can_modify": bool, "has_signature": bool}
+        can_modify=False：PDF 設了禁止修改權限，編輯會解除其保護。
+        has_signature=True：含數位簽章，編輯後簽章將失效。
+    """
+    import fitz
+
+    doc = _open_pdf(input_path)
+    try:
+        can_modify = True
+        has_signature = False
+        if not doc.needs_pass:
+            try:
+                can_modify = bool(doc.permissions & fitz.PDF_PERM_MODIFY)
+            except Exception:
+                can_modify = True
+            try:
+                has_signature = doc.get_sigflags() > -1
+            except Exception:
+                has_signature = False
+        return {"can_modify": can_modify, "has_signature": has_signature}
     finally:
         doc.close()
