@@ -14,7 +14,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QDialog,
+    QPushButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -816,19 +818,49 @@ class _TextEditTab(_BaseTab):
     套用時一次寫出。
     """
 
+    _ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
+
     def _setup_tab_ui(self) -> None:
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(12)
 
-        # 左側：頁面預覽（可捲動）
-        self._preview_scroll = QScrollArea()
+        # 左側：頁面預覽 + 縮放列
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(4)
+
+        self._preview_scroll = _FitScrollArea()
         self._preview_scroll.setWidgetResizable(False)
-        self._preview_label = QLabel("開啟 PDF 後在此預覽本頁")
-        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_label = _ClickablePreview("開啟 PDF 後在此預覽本頁")
         self._preview_scroll.setWidget(self._preview_label)
         self._preview_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._preview_scroll, stretch=6)
+        left_layout.addWidget(self._preview_scroll, stretch=1)
+
+        # 縮放控制列
+        zoom_row = QHBoxLayout()
+        zoom_row.addStretch()
+        self._zoom_out_btn = PushButton("－")
+        self._zoom_out_btn.setFixedWidth(36)
+        self._zoom_out_btn.setEnabled(False)
+        self._zoom_label = QLabel("適合視窗")
+        self._zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._zoom_label.setFixedWidth(80)
+        self._zoom_in_btn = PushButton("＋")
+        self._zoom_in_btn.setFixedWidth(36)
+        self._zoom_in_btn.setEnabled(False)
+        self._zoom_fit_btn = PushButton("適合視窗")
+        self._zoom_fit_btn.setEnabled(False)
+        zoom_row.addWidget(self._zoom_out_btn)
+        zoom_row.addWidget(self._zoom_label)
+        zoom_row.addWidget(self._zoom_in_btn)
+        zoom_row.addSpacing(8)
+        zoom_row.addWidget(self._zoom_fit_btn)
+        zoom_row.addStretch()
+        left_layout.addLayout(zoom_row)
+
+        layout.addWidget(left, stretch=6)
 
         # 右側面板
         right = QWidget()
@@ -871,7 +903,7 @@ class _TextEditTab(_BaseTab):
         rl.addLayout(search_row)
         self._table = QTableWidget()
         self._table.setColumnCount(3)
-        self._table.setHorizontalHeaderLabels(["原文", "新文字", "字型"])
+        self._table.setHorizontalHeaderLabels(["原文", "改為（點擊預覽圖編輯）", "字型"])
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(0, header.ResizeMode.Stretch)
         header.setSectionResizeMode(1, header.ResizeMode.Stretch)
@@ -891,6 +923,7 @@ class _TextEditTab(_BaseTab):
 
         # 提示
         self._hint_label = QLabel(
+            "直接點擊左側預覽圖中的文字即可開始編輯。"
             "適合改金額 / 日期 / 錯字等「等長或變短」的小修；"
             "改更長會標紅（爆框，可能壓到旁邊內容）。"
         )
@@ -922,13 +955,28 @@ class _TextEditTab(_BaseTab):
         self._edits: dict[tuple[int, int], str] = {}   # (page, index) -> new_text
         self._preview_out: Path | None = None
         self._is_preview = False
+        self._render_scale: float = 2.0
+        self._raw_pixmap: QPixmap | None = None
+        self._fit_scale: float = 1.0
+        self._zoom_factor: float = 1.0
+        self._display_scale: float = 1.0
 
         # 連線
         self._browse_btn.clicked.connect(self._on_browse)
         self._prev_page_btn.clicked.connect(lambda: self._go_page(self._page_num - 1))
         self._next_page_btn.clicked.connect(lambda: self._go_page(self._page_num + 1))
-        self._table.cellChanged.connect(self._on_cell_changed)
         self._search_edit.textChanged.connect(self._on_search)
+        self._preview_label.clicked.connect(self._on_preview_clicked)
+        self._preview_label.zoom_requested.connect(self._on_zoom_step)
+        self._zoom_out_btn.clicked.connect(self._zoom_out)
+        self._zoom_in_btn.clicked.connect(self._zoom_in)
+        self._zoom_fit_btn.clicked.connect(self._zoom_fit)
+        self._preview_scroll.resized.connect(self._update_display)
+        from PySide6.QtGui import QKeySequence, QShortcut
+        QShortcut(QKeySequence("Ctrl+="), self, self._zoom_in)
+        QShortcut(QKeySequence("Ctrl++"), self, self._zoom_in)
+        QShortcut(QKeySequence("Ctrl+-"), self, self._zoom_out)
+        QShortcut(QKeySequence("Ctrl+0"), self, self._zoom_fit)
         self._preview_btn.clicked.connect(self._on_preview)
         self._primary_btn.clicked.connect(self._on_apply)
 
@@ -1002,18 +1050,73 @@ class _TextEditTab(_BaseTab):
             QApplication.restoreOverrideCursor()
 
     def _render_current(self, pdf_path: Path) -> None:
-        """渲染指定 PDF 的當前頁到左側預覽。"""
+        """渲染指定 PDF 的當前頁，儲存原始 pixmap 後套用 fit 縮放。"""
         if self._controller is None:
             return
         try:
-            png = self._controller.render_page(pdf_path, self._page_num)
+            png = self._controller.render_page(pdf_path, self._page_num, scale=self._render_scale)
         except Exception as exc:
             _show_info_bar(self, "error", "渲染失敗", str(exc))
             return
         pix = QPixmap()
         pix.loadFromData(png, "PNG")
-        self._preview_label.setPixmap(pix)
-        self._preview_label.resize(pix.size())
+        self._raw_pixmap = pix
+        self._zoom_factor = 1.0
+        self._update_display()
+        self._zoom_out_btn.setEnabled(True)
+        self._zoom_in_btn.setEnabled(True)
+        self._zoom_fit_btn.setEnabled(True)
+
+    def _update_display(self) -> None:
+        """依 _raw_pixmap + _zoom_factor 重新縮放並更新預覽標示。"""
+        if self._raw_pixmap is None:
+            return
+        W_raw, H_raw = self._raw_pixmap.width(), self._raw_pixmap.height()
+        if W_raw == 0 or H_raw == 0:
+            return
+        vp = self._preview_scroll.viewport()
+        W_view = max(vp.width(), 1)
+        H_view = max(vp.height(), 1)
+        self._fit_scale = min(W_view / W_raw, H_view / H_raw)
+        s = self._fit_scale * self._zoom_factor
+        self._display_scale = s
+        W_disp = max(1, int(W_raw * s))
+        H_disp = max(1, int(H_raw * s))
+        scaled = self._raw_pixmap.scaled(
+            W_disp, H_disp,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._preview_label.setPixmap(scaled)
+        self._preview_label.resize(scaled.size())
+        if abs(self._zoom_factor - 1.0) < 0.01:
+            self._zoom_label.setText("適合視窗")
+        else:
+            self._zoom_label.setText(f"{int(self._zoom_factor * 100)}%")
+
+    def _zoom_in(self) -> None:
+        for step in self._ZOOM_STEPS:
+            if step > self._zoom_factor + 0.01:
+                self._zoom_factor = step
+                self._update_display()
+                return
+
+    def _zoom_out(self) -> None:
+        for step in reversed(self._ZOOM_STEPS):
+            if step < self._zoom_factor - 0.01:
+                self._zoom_factor = step
+                self._update_display()
+                return
+
+    def _zoom_fit(self) -> None:
+        self._zoom_factor = 1.0
+        self._update_display()
+
+    def _on_zoom_step(self, direction: int) -> None:
+        if direction > 0:
+            self._zoom_in()
+        else:
+            self._zoom_out()
 
     # -------------------------------------------------------------------------
     # 表格與編輯狀態
@@ -1033,7 +1136,11 @@ class _TextEditTab(_BaseTab):
 
             key = (self._page_num, sp["index"])
             new_val = self._edits.get(key, {}).get("new", sp["text"])
-            self._table.setItem(row, 1, QTableWidgetItem(new_val))
+            new_item = QTableWidgetItem(new_val)
+            new_item.setFlags(new_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if new_val != sp["text"]:
+                new_item.setForeground(QColor("#005FB8"))
+            self._table.setItem(row, 1, new_item)
 
             font_txt = "同款✓" if sp["edit_font_exact"] else "替代⚠"
             fitem = QTableWidgetItem(font_txt)
@@ -1073,34 +1180,42 @@ class _TextEditTab(_BaseTab):
             if item is not None:
                 item.setBackground(bg)
 
-    def _on_cell_changed(self, row: int, col: int) -> None:
-        """新文字欄變更：更新 self._edits 並即時標紅爆框。"""
-        if col != 1 or row >= len(self._spans):
-            return
-        sp = self._spans[row]
-        item = self._table.item(row, 1)
-        new_text = item.text() if item is not None else ""
-        key = (self._page_num, sp["index"])
-        if new_text == sp["text"]:
-            self._edits.pop(key, None)
-        else:
-            self._edits[key] = {"original": sp["text"], "new": new_text}
-
-        self._table.blockSignals(True)
-        self._mark_row_overflow(row, sp, new_text)
-        self._table.blockSignals(False)
-
-        self._update_change_label()
-        has_edits = bool(self._edits)
-        self._preview_btn.setEnabled(has_edits)
-        self._primary_btn.setEnabled(has_edits)
-
     def _collect_edits(self) -> list[dict]:
         """將累積的編輯組成 apply_text_edits 需要的清單。"""
         return [
             {"page": page, "index": index, "new_text": v["new"], "original": v["original"]}
             for (page, index), v in self._edits.items()
         ]
+
+    def _on_preview_clicked(self, px: float, py: float) -> None:
+        """點擊預覽圖：碰撞測試找到對應 span，彈出編輯對話框。"""
+        if not self._spans or self._controller is None:
+            return
+        pdf_x = px / (self._display_scale * self._render_scale)
+        pdf_y = py / (self._display_scale * self._render_scale)
+        hit: dict | None = None
+        for sp in self._spans:
+            b = sp["bbox"]
+            if float(b[0]) <= pdf_x <= float(b[2]) and float(b[1]) <= pdf_y <= float(b[3]):
+                hit = sp
+                break
+        if hit is None:
+            return
+        key = (self._page_num, hit["index"])
+        current = self._edits.get(key, {}).get("new", hit["text"])
+        dlg = _SpanEditDialog(hit, current, self._controller, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_text = dlg.get_new_text()
+        if new_text == hit["text"]:
+            self._edits.pop(key, None)
+        else:
+            self._edits[key] = {"original": hit["text"], "new": new_text}
+        self._populate_table()
+        self._update_change_label()
+        has_edits = bool(self._edits)
+        self._preview_btn.setEnabled(has_edits)
+        self._primary_btn.setEnabled(has_edits)
 
     # -------------------------------------------------------------------------
     # 預覽與套用
@@ -1216,6 +1331,7 @@ class _TextEditTab(_BaseTab):
             except OSError:
                 pass
         self._preview_out = None
+        self._raw_pixmap = None
 
     def _confirm_changes(self) -> bool:
         """套用前彈出變更摘要供最終確認，回傳 True 表示確認套用。"""
@@ -1244,6 +1360,113 @@ class _TextEditTab(_BaseTab):
         """關閉時清理預覽暫存檔。"""
         self._cleanup_preview()
         super().closeEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# 可點擊預覽 + 單 span 編輯對話框
+# ---------------------------------------------------------------------------
+
+class _FitScrollArea(QScrollArea):
+    """resizeEvent 時發射 resized，供 _TextEditTab 重新計算 fit 縮放。"""
+
+    resized = Signal()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.resized.emit()
+
+
+class _ClickablePreview(QLabel):
+    """PDF 頁面預覽，點擊發射 clicked；Ctrl+Wheel 發射 zoom_requested(±1)。"""
+
+    clicked = Signal(float, float)
+    zoom_requested = Signal(int)  # +1 放大 / -1 縮小
+
+    def __init__(self, placeholder: str = "", parent=None):
+        super().__init__(placeholder, parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
+            self.clicked.emit(pos.x(), pos.y())
+        super().mousePressEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.zoom_requested.emit(1 if event.angleDelta().y() > 0 else -1)
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+
+class _SpanEditDialog(QDialog):
+    """點擊 PDF 預覽後彈出的單段落文字編輯對話框。"""
+
+    def __init__(self, span: dict, current_text: str, controller, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("修改文字")
+        self.setMinimumWidth(380)
+        self._span = span
+        self._controller = controller
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        orig_label = QLabel(f"原文：{span['text']}")
+        orig_label.setWordWrap(True)
+        layout.addWidget(orig_label)
+
+        layout.addWidget(QLabel("新文字："))
+        self._edit = QLineEdit(current_text)
+        self._edit.selectAll()
+        layout.addWidget(self._edit)
+
+        self._warn_label = QLabel()
+        self._warn_label.setStyleSheet("color: #CC5500;")
+        self._warn_label.setWordWrap(True)
+        self._warn_label.setVisible(False)
+        layout.addWidget(self._warn_label)
+
+        font_note = "同款字型 ✓" if span.get("edit_font_exact") else "替代字型 ⚠（字型略不同，非錯誤）"
+        font_label = QLabel(f"字型：{font_note}")
+        font_label.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(font_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("取消")
+        ok_btn = QPushButton("確定")
+        ok_btn.setDefault(True)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        self._edit.textChanged.connect(self._check_overflow)
+        self._edit.returnPressed.connect(self.accept)
+
+        self._check_overflow(current_text)
+
+    def _check_overflow(self, text: str) -> None:
+        if self._controller is None or text == self._span["text"]:
+            self._warn_label.setVisible(False)
+            return
+        b = self._span["bbox"]
+        max_w = float(b[2]) - float(b[0])
+        try:
+            overflow = self._controller.measure_overflow(
+                text, self._span["font"], self._span["size"], max_w
+            )
+        except Exception:
+            overflow = False
+        self._warn_label.setText("⚠ 文字比原框寬，可能壓到旁邊內容" if overflow else "")
+        self._warn_label.setVisible(overflow)
+
+    def get_new_text(self) -> str:
+        return self._edit.text()
 
 
 # ---------------------------------------------------------------------------
