@@ -1,10 +1,11 @@
-"""商用版主視窗 — MSFluentWindow + 5 分頁導航 + 完整整合。
+"""商用版主視窗 — MSFluentWindow + 7 分頁導航 + 完整整合。
 
 架構概覽：
     - 繼承 qfluentwidgets.MSFluentWindow（類 Microsoft 365 UI 風格）
-    - 5 個分頁：首頁 / 批次 / 歷史 / 設定 / 關於
-    - 5 個 Manager：SettingsManager / NotificationManager / HistoryManager /
-                    TrayManager / ConversionController
+    - 7 個分頁：首頁 / 批次 / PDF 工具 / 圖片工具 / 歷史 / 設定 / 關於
+    - 7 個 Manager：SettingsManager / NotificationManager / HistoryManager /
+                    TrayManager / ConversionController /
+                    PdfToolsController / ImageToolsController
     - 所有 Manager 初始化後注入至各 Page（set_controller / set_managers）
 
 Round 4a 整合清單：
@@ -62,8 +63,8 @@ class MainWindowV2(MSFluentWindow):
     初始化順序：
         1. 視窗基本屬性（標題 / 尺寸 / 圖示）
         2. 旗標初始化（_force_quit / _first_hide_shown）
-        3. 建立 5 個 Manager（settings → notification → history → tray → controller）
-        4. 建立 5 個 Page
+        3. 建立 7 個 Manager（settings → notification → history → tray → controllers）
+        4. 建立 7 個 Page
         5. 注入依賴（set_controller / set_managers）
         6. 初始化導航列
         7. 整合連線（notifications / tray / shortcuts / theme / history）
@@ -186,7 +187,7 @@ class MainWindowV2(MSFluentWindow):
     def _init_navigation(self) -> None:
         """設定 MSFluentWindow 導航列。
 
-        主導航(TOP):首頁 / 批次 / PDF 工具 / 歷史
+        主導航(TOP):首頁 / 批次 / PDF 工具 / 圖片工具 / 歷史
         底部導航(BOTTOM):設定 / 關於
         預設頁面:首頁
         """

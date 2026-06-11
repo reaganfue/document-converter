@@ -92,23 +92,6 @@ class ProgressWidgetSignals(QObject):
     cancel_requested = Signal(str)   # job_id
 
 
-class SettingsDialogSignals(QObject):
-    """SettingsDialog 對外發出的 Signal。
-
-    settings_applied: 使用者按下「套用」後發送完整設定 dict。
-
-    設定 dict 結構：
-        {
-            "output_dir": str,      # 輸出資料夾絕對路徑
-            "overwrite": bool,      # 同名檔案是否覆寫
-            "concurrent": int,      # 最大並行任務數（1–8）
-            "theme": str            # "system" | "light" | "dark"
-        }
-    """
-
-    settings_applied = Signal(dict)
-
-
 # ---------------------------------------------------------------------------
 # Controller Signal 契約
 # ---------------------------------------------------------------------------

@@ -1,8 +1,4 @@
-"""設定頁（SettingsPage）— 應用設定全頁面（取代 v1 SettingsDialog）。
-
-架構差異（v1 dialog → v2 page）：
-    v1：SettingsDialog（QDialog 彈出視窗，settings_applied Signal 一次性）
-    v2：SettingsPage（嵌入式全頁面，每個設定項即時呼叫 SettingsManager.set）
+"""設定頁（SettingsPage）— 應用設定全頁面。
 
 設計原則：
     - Windows 11 Settings 慣例：即時儲存，不需「套用」按鈕
@@ -33,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class SettingsPage(BasePage):
-    """設定頁（全頁面版，取代 SettingsDialog）。
+    """設定頁（嵌入式全頁面，設定項即時儲存）。
 
     UI 分組（7 個 SettingCardGroup）：
         1. 檔案與轉換  — 輸出目錄、覆寫、並行數、目標格式、逾時

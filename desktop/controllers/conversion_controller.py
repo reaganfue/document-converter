@@ -5,7 +5,7 @@ Round 2 職責（controllers 代理）：
     - 使用 QThreadPool 呼叫 converters.dispatcher.convert_file（非同步）
     - 追蹤所有 Job 狀態，發出 job_progress / job_status_changed / job_completed / job_failed
     - 支援取消（Cancel）：標記 Job 為 ERROR 並停止對應 Worker
-    - 設定 concurrent 上限（從 SettingsDialog.settings_applied 接收）
+    - 設定 concurrent 上限（從設定頁 SettingsPage 接收）
     - 全部完成後發出 all_completed Signal
 
 重要：converters.dispatcher.convert_file 的實際簽名：
@@ -474,7 +474,7 @@ class ConversionController(QObject):
 
     @Slot(dict)
     def update_settings(self, settings: dict) -> None:
-        """套用來自 SettingsDialog 的設定並持久化至 QSettings。
+        """套用來自設定頁（SettingsPage）的設定並持久化至 QSettings。
 
         Args:
             settings: 設定 dict，結構：
