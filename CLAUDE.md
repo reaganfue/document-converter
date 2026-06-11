@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 專案概覽
 
-這是一個**完全本機運行的文件轉換工具**，v2.0 起為 **PySide6 桌面應用**（基於 QFluentWidgets，Windows 11 Fluent Design 風格）。支援 PDF / DOCX / PPTX / HTML / Markdown / TXT / Image 七種格式互轉，並內建 PDF 工具（合併/分割/壓縮/加密/文字編輯）與圖片工具（rembg 去背）。用戶雙擊 `start.bat` 即可啟動，無雲端依賴、無浮水印、無次數限制。
+這是一個**完全本機運行的文件轉換工具**，v2.0 起為 **PySide6 桌面應用**（基於 QFluentWidgets，Windows 11 Fluent Design 風格）。支援 PDF / DOCX / PPTX / HTML / Markdown / TXT / Image 七種格式互轉（掃描版 PDF 自動 OCR），並內建 PDF 工具（合併/分割/壓縮/加密/文字編輯）與圖片工具（rembg 去背）。用戶雙擊 `start.bat` 即可啟動，無雲端依賴、無浮水印、無次數限制。
 
-核心技術棧：Python 3.13 · PySide6 6.11.0 · PySide6-Fluent-Widgets 1.11.2 · PyMuPDF · python-docx · python-pptx · weasyprint · Pillow · rembg
+核心技術棧：Python 3.13 · PySide6 6.11.0 · PySide6-Fluent-Widgets 1.11.2 · PyMuPDF · python-docx · python-pptx · weasyprint · Pillow · rembg · RapidOCR
 
 > 專案狀態：個人使用，功能已完成。預設不主動擴張功能。
 
@@ -59,11 +59,12 @@ deactivate
 venv/Scripts/python.exe -m PyInstaller desktop_build.spec --clean --noconfirm
 ```
 
-產物：`dist/文件轉檔/文件轉檔.exe`（onedir 模式，整個資料夾約 1.1 GB，其中 AI 去背模型佔 525 MB）
+產物：`dist/文件轉檔/文件轉檔.exe`（onedir 模式，整個資料夾約 600 MB）
 
 - `desktop_build.spec`：PyInstaller 設定檔（hiddenimports、資源路徑、onedir / windowed）
 - `build.bat`：UTF-8 BOM + CRLF 打包腳本，自動清理 build/dist 後重新打包並驗證產物存在
-- 打包前需確保 `u2net_models/` 存在（執行 `scripts/predownload_models.py` 預下載 rembg 模型）
+- rembg 去背模型（~525MB）**不內嵌**：打包版首次使用去背時自動下載；離線部署把 `u2net_models/` 放到 exe 同目錄
+- RapidOCR 模型（~15MB）隨 `collect_data_files('rapidocr_onnxruntime')` 內嵌，OCR 離線可用
 
 > `docx2pdf` 在打包後仍需本機安裝 Microsoft Word 才能使用；其餘功能無額外依賴。
 
@@ -116,7 +117,8 @@ python -m desktop
 ```
 desktop/controllers/ → converters/dispatcher.py    格式互轉路由
                        converters/pdf_tools.py     PDF 工具操作
-                       converters/image_tools.py   去背/背景處理
+                       converters/image_tools.py   去背/背景處理（模型缺失時首次使用自動下載）
+                       converters/pdf_ocr.py       掃描版 PDF OCR（RapidOCR，PDFConverter 的無文字層後備）
 ```
 
 ### Converter Dispatch Pattern
@@ -141,7 +143,7 @@ Chrome/Edge headless → wkhtmltopdf → weasyprint → reportlab，四引擎依
 
 | Converter 類別 | 負責格式 | 主要依賴 |
 |---------------|---------|---------|
-| `PDFConverter` | pdf → docx/html/md/txt/image | PyMuPDF, pdf2docx |
+| `PDFConverter` | pdf → docx/html/md/txt/image | PyMuPDF, pdf2docx, RapidOCR（掃描頁後備） |
 | `WordConverter` | docx → pdf/html/md/txt | python-docx, docx2pdf, weasyprint |
 | `PPTConverter` | pptx → pdf/html/txt/image | python-pptx, Pillow |
 | `HTMLConverter` | html → pdf/docx/md/txt | weasyprint, BeautifulSoup4 |
@@ -163,10 +165,14 @@ ConversionError（基類：首選 + 降級都失敗）
 tests/
 ├── conftest.py              # pytest fixtures（目錄隔離、假檔案）
 ├── fixtures/                # 程式化生成的測試檔（generate_fixtures.py 自動重建）
+├── test_desktop/
+│   └── test_settings_profiles.py   # 轉換 Profile CRUD（INI 隔離，不碰 Registry）
 └── test_converters/
     ├── conftest.py          # sample.* fixtures（pytest 啟動時自動生成）
     ├── test_pdf_converter.py
     ├── test_pdf_renderer.py
+    ├── test_pdf_ocr.py              # 掃描版 PDF OCR 端到端（生成無文字層 fixture）
+    ├── test_image_tools_models.py   # rembg 模型路徑解析 / 可用性
     ├── test_word_converter.py
     ├── test_ppt_converter.py
     ├── test_html_converter.py
@@ -195,10 +201,11 @@ tests/
 
 - **`docx2pdf` 依賴 Microsoft Word COM**：未安裝 Word 時自動降級至 `python-docx → weasyprint` 路徑。
 - **PPTX → DOCX 未支援**（設計決策，非 bug）：詳見 `converters/dispatcher.py` 的 `_SUPPORT_MATRIX`。
-- **掃描版 PDF 無法抽取文字**（需 OCR，未實作）：若 PDF 為純圖片，轉 TXT/MD 結果為空。
+- **掃描版 PDF 自動 OCR**（v2.2 起）：無文字層頁面在 TXT/MD/HTML 路徑自動走 RapidOCR；輸出純文字不還原版面，手寫/低解析度辨識有限。有文字層的頁面永遠走原生抽取。
 - **`weasyprint>=62.0` 為 Python 3.13 必要版本**：釘低版本會造成 import warning 或失敗。
 - **`.bat` 檔案必須 UTF-8 BOM + CRLF**：否則 cmd 解析中文註解會出錯。
-- **`u2net_models/` 不入版控**（~525MB）：執行 `scripts/predownload_models.py` 重建；打包 exe 前必須先存在。
+- **rembg 模型不入版控也不內嵌打包**（~525MB）：首次使用去背時自動下載至 `~/.u2net/`；`scripts/predownload_models.py` 為離線預載選項。
+- **windowed 模式 stdout 防護**：`desktop/main.py` 對 `sys.stdout/stderr is None` 墊 StringIO，防第三方進度條崩潰——新增入口時不要移除。
 
 ## Quick Start for New Claude Code Session
 
