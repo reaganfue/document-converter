@@ -322,3 +322,4 @@ class ImageToolsControllerSignals(QObject):
     item_completed = Signal(int, object)        # idx, BatchItemResult
     operation_completed = Signal(str, object)   # operation_name, result
     operation_failed = Signal(str, str)         # operation_name, error_message
+    model_download_required = Signal(str)       # model name — 模型缺失，首次使用將自動下載（~175MB）

@@ -94,42 +94,57 @@ _session_cache: dict[str, object] = {}
 
 
 def resolve_model_dir() -> Path:
-    """回傳 rembg 模型目錄路徑。
+    """回傳 rembg 模型目錄路徑（模型缺失時不拋錯——首次使用時自動下載）。
 
     優先序：
-        1. frozen 模式（PyInstaller）：sys._MEIPASS/u2net_models/（內嵌打包）
-        2. dev 模式優先：<project_root>/u2net_models/（與 frozen 路徑一致；
-           由 scripts/predownload_models.py 預下載，git-ignored）
-        3. dev 模式 fallback：~/.u2net/（rembg 預設位置，需網路下載）
+        1. frozen 模式：sys._MEIPASS/u2net_models/（完整離線打包，若打包時內嵌）
+        2. frozen 模式：exe 同目錄/u2net_models/（手動放置模型的離線部署）
+        3. dev 模式：<project_root>/u2net_models/（scripts/predownload_models.py 預下載）
+        4. 共同 fallback：~/.u2net/（rembg 預設位置；不存在則建立，
+           模型檔由 rembg 於首次 new_session 時自動下載，約 175MB/模型）
 
     呼叫此函式於模組 import 時，立即將路徑寫入環境變數 U2NET_HOME，
-    讓 rembg.new_session() 走指定路徑而非預設下載路徑。
+    讓 rembg.new_session() 走指定路徑。
 
     Returns:
-        模型目錄 Path（必存在；frozen 模式若不存在則拋 ModelNotFoundError）。
+        模型目錄 Path（保證存在；內容可能為空，待首次使用時下載）。
     """
+    candidate: Optional[Path] = None
+
     if getattr(sys, "frozen", False):
-        # PyInstaller 打包模式
         meipass = Path(sys._MEIPASS)  # type: ignore[attr-defined]
-        candidate = meipass / "u2net_models"
-        if not candidate.exists():
-            raise ModelNotFoundError(
-                f"打包內未找到模型目錄：{candidate}。"
-                "請執行 scripts/predownload_models.py 預下載。"
-            )
+        bundled = meipass / "u2net_models"
+        portable = Path(sys.executable).resolve().parent / "u2net_models"
+        for c in (bundled, portable):
+            if c.exists() and any(c.glob("*.onnx")):
+                candidate = c
+                break
     else:
-        # dev 模式：先看專案根 u2net_models/（與 frozen 一致），
-        # 沒有則 fallback 到 rembg 預設 ~/.u2net/
         # converters/image_tools.py → 專案根 = parent.parent
         project_dir = Path(__file__).resolve().parent.parent / "u2net_models"
         if project_dir.exists() and any(project_dir.glob("*.onnx")):
             candidate = project_dir
-        else:
-            candidate = Path.home() / ".u2net"
-            candidate.mkdir(parents=True, exist_ok=True)
+
+    if candidate is None:
+        candidate = Path.home() / ".u2net"
+        candidate.mkdir(parents=True, exist_ok=True)
 
     os.environ["U2NET_HOME"] = str(candidate)
     return candidate
+
+
+def is_model_available(model: str) -> bool:
+    """檢查指定模型的 .onnx 檔是否已就緒（無需下載即可使用）。
+
+    rembg 模型檔命名慣例：<model_name>.onnx（與 AVAILABLE_MODELS key 一致）。
+
+    Args:
+        model: AVAILABLE_MODELS 中的 key。
+
+    Returns:
+        True 表示模型檔已存在於 _MODEL_DIR；False 表示首次使用時需下載。
+    """
+    return (_MODEL_DIR / f"{model}.onnx").exists()
 
 
 # 模組 import 時立即執行

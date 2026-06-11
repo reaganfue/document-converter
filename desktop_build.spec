@@ -20,9 +20,9 @@ ROOT = Path(SPECPATH)
 datas = [
     # 桌面應用資源（圖示、QSS）
     (str(ROOT / 'desktop' / 'resources'), 'desktop/resources'),
-    # W-IMAGE-TOOLS: rembg 預下載模型（執行 scripts/predownload_models.py 後存在）
-    # 若目錄不存在則打包前需先跑預下載腳本
-    (str(ROOT / 'u2net_models'), 'u2net_models'),
+    # 注意：rembg AI 模型（u2net_models/，~525MB）刻意「不」內嵌 —
+    # 模型由應用首次使用去背時自動下載至 ~/.u2net/（瘦身 ~1.1GB → ~550MB）。
+    # 離線部署：把 u2net_models/ 資料夾放到 exe 同目錄即可（resolve_model_dir 會優先讀取）。
 ]
 
 # ─────────────────────────────────────────────

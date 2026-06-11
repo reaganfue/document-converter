@@ -6,9 +6,18 @@
 """
 from __future__ import annotations
 
+import io
 import logging
 import sys
 from pathlib import Path
+
+# windowed 模式（pythonw / PyInstaller console=False）下 sys.stdout/stderr 為 None，
+# 第三方庫（rembg 模型下載的 tqdm 進度條等）直接寫入會 AttributeError。
+# 以記憶體緩衝墊底，保證任何 print / progress bar 都不會炸掉應用。
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 
 # 確保 desktop 套件能 import converters（專案根目錄加入 sys.path）
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent

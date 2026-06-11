@@ -1,20 +1,21 @@
-"""預下載 rembg 模型到專案根 u2net_models/ 目錄。
+"""預下載 rembg 模型到專案根 u2net_models/ 目錄（選用）。
 
 執行方式：
     venv/Scripts/python.exe scripts/predownload_models.py
 
-下載完成後，desktop_build.spec 會將此目錄複製進 dist/，
-讓 portable exe 完全離線運作（不需執行時下載）。
+預設情況下「不需要」執行本腳本 — 應用會在首次使用去背功能時
+自動下載所需模型（~175MB/個）至 ~/.u2net/。本腳本適用於：
+    - dev 環境想一次抓齊 3 個模型、之後完全離線
+    - 離線部署 portable exe：下載後把 u2net_models/ 資料夾
+      複製到 exe 同目錄，應用會優先讀取（不需網路）
 
 3 個模型總計約 ~525MB：
     - u2net               約 175MB（通用）
     - u2net_human_seg     約 175MB（人像優化）
     - isnet-general-use   約 175MB（最新最準）
 
-打包後路徑解析：
-    - dev 模式：~/.u2net/ 或本腳本指定的 u2net_models/
-    - frozen：  sys._MEIPASS/u2net_models/
-詳見 converters/image_tools.py 的 resolve_model_dir()
+路徑解析優先序詳見 converters/image_tools.py 的 resolve_model_dir()。
+注意：desktop_build.spec 已「不再」內嵌模型（瘦身 ~1.1GB → ~550MB）。
 """
 from __future__ import annotations
 
