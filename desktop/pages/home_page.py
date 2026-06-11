@@ -32,11 +32,22 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from qfluentwidgets import FluentIcon, PrimaryPushButton
+    from qfluentwidgets import (
+        ComboBox,
+        FluentIcon,
+        LineEdit,
+        MessageBoxBase,
+        PrimaryPushButton,
+        SubtitleLabel,
+        ToolButton,
+    )
     _HAS_FLUENT = True
 except ImportError:
+    from PySide6.QtWidgets import QComboBox as ComboBox  # type: ignore[assignment]
     from PySide6.QtWidgets import QPushButton as PrimaryPushButton  # type: ignore[assignment]
+    from PySide6.QtWidgets import QToolButton as ToolButton  # type: ignore[assignment]
     FluentIcon = None  # type: ignore[assignment]
+    MessageBoxBase = None  # type: ignore[assignment]
     _HAS_FLUENT = False
 
 from desktop.interfaces import ConversionJob, JobStatus, PageID
@@ -77,6 +88,7 @@ class HomePage(BasePage):
         self._file_cards: dict[str, FileCard] = {}
         self._notification_manager = None
         self._history_manager = None
+        self._settings_manager = None
 
         # 1. 頂部統計條（固定 48px）
         self.stats_bar = StatsBar()
@@ -100,20 +112,37 @@ class HomePage(BasePage):
         self._update_empty_state()
 
     def _build_format_row(self) -> QHBoxLayout:
-        """建立格式選擇列：[FormatSelector] [全部轉換 (F5)]。"""
+        """建立格式選擇列：[Profile▼][存][刪] [FormatSelector] [全部轉換 (F5)]。"""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
+        # 轉換 Profile：一鍵套用「目標格式 + 輸出目錄 + 覆寫」組合
+        self.profile_combo = ComboBox()
+        self.profile_combo.setMinimumWidth(130)
+        self.profile_combo.activated.connect(self._on_profile_selected)
+        row.addWidget(self.profile_combo)
+
+        if _HAS_FLUENT:
+            self.profile_save_btn = ToolButton(FluentIcon.SAVE)
+            self.profile_delete_btn = ToolButton(FluentIcon.DELETE)
+        else:
+            self.profile_save_btn = ToolButton()
+            self.profile_delete_btn = ToolButton()
+        self.profile_save_btn.setToolTip("把目前的「格式 + 輸出目錄 + 覆寫」儲存為 Profile")
+        self.profile_delete_btn.setToolTip("刪除選中的 Profile")
+        self.profile_save_btn.clicked.connect(self._on_save_profile)
+        self.profile_delete_btn.clicked.connect(self._on_delete_profile)
+        row.addWidget(self.profile_save_btn)
+        row.addWidget(self.profile_delete_btn)
+
         self.format_selector = FormatSelector()
         row.addWidget(self.format_selector, stretch=1)
 
-        if _HAS_FLUENT:
-            self.start_button = PrimaryPushButton("全部轉換 (F5)")
-        else:
-            self.start_button = PrimaryPushButton("全部轉換 (F5)")
+        self.start_button = PrimaryPushButton("全部轉換 (F5)")
         row.addWidget(self.start_button)
 
+        self._reload_profiles()
         return row
 
     def _build_queue_scroll(self) -> QScrollArea:
@@ -160,6 +189,10 @@ class HomePage(BasePage):
         super().set_managers(**managers)
         self._history_manager = managers.get("history")
         self._notification_manager = managers.get("notification")
+        self._settings_manager = managers.get("settings")
+
+        # SettingsManager 注入後重載 Profile 清單
+        self._reload_profiles()
 
         # 啟動時立即從 DB 載入今日統計（MainWindowV2 不會觸發 on_enter）
         self._refresh_stats()
@@ -236,6 +269,103 @@ class HomePage(BasePage):
                     "HomePage._on_batch_format: job_id=%s set_target_format 呼叫失敗",
                     job_id,
                 )
+
+    # ------------------------------------------------------------------
+    # 轉換 Profile
+    # ------------------------------------------------------------------
+
+    def _reload_profiles(self) -> None:
+        """從 SettingsManager 重載 Profile 下拉清單（第 0 項為 placeholder）。"""
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItem("Profile…", userData=None)
+        if self._settings_manager is not None:
+            for p in self._settings_manager.get_profiles():
+                label = f"{p['name']}（{p['target_format'].upper()}）"
+                self.profile_combo.addItem(label, userData=p)
+        self.profile_combo.setCurrentIndex(0)
+        self.profile_combo.blockSignals(False)
+
+    def _on_profile_selected(self, index: int) -> None:
+        """使用者選中 Profile：套用格式至選擇器與佇列卡片，並套用輸出設定。"""
+        profile = self.profile_combo.itemData(index)
+        if not profile:
+            return  # placeholder
+
+        fmt = profile["target_format"]
+        self.format_selector.set_format(fmt)
+        self._on_batch_format(fmt)
+
+        if self._settings_manager is not None:
+            # output_dir 空字串 = 還原為全域預設輸出目錄
+            self._settings_manager.set("output_dir", profile.get("output_dir", ""))
+            self._settings_manager.set("overwrite", bool(profile.get("overwrite", False)))
+
+        self._notify("info", "已套用 Profile", f"{profile['name']} → {fmt.upper()}")
+        logger.info("HomePage: 套用 Profile %r", profile["name"])
+
+    def _on_save_profile(self) -> None:
+        """把目前的「格式 + 輸出目錄 + 覆寫」組合儲存為具名 Profile。"""
+        if self._settings_manager is None:
+            return
+
+        name = self._ask_profile_name()
+        if not name:
+            return
+
+        profile = {
+            "name": name,
+            "target_format": self.format_selector.current_format,
+            "output_dir": str(self._settings_manager.get("output_dir", "")),
+            "overwrite": bool(self._settings_manager.get("overwrite", False)),
+        }
+        try:
+            self._settings_manager.save_profile(profile)
+        except ValueError as exc:
+            self._notify("error", "Profile 儲存失敗", str(exc))
+            return
+
+        self._reload_profiles()
+        # 選中剛儲存的 profile，方便視覺確認
+        for i in range(self.profile_combo.count()):
+            data = self.profile_combo.itemData(i)
+            if data and data.get("name") == name:
+                self.profile_combo.setCurrentIndex(i)
+                break
+        self._notify("success", "Profile 已儲存", name)
+
+    def _on_delete_profile(self) -> None:
+        """刪除下拉選單目前選中的 Profile。"""
+        if self._settings_manager is None:
+            return
+        profile = self.profile_combo.currentData()
+        if not profile:
+            self._notify("info", "未選擇 Profile", "請先在下拉選單選中要刪除的 Profile")
+            return
+        if self._settings_manager.delete_profile(profile["name"]):
+            self._reload_profiles()
+            self._notify("success", "Profile 已刪除", profile["name"])
+
+    def _ask_profile_name(self) -> str:
+        """彈出命名對話框，回傳使用者輸入的名稱（取消時回傳空字串）。"""
+        if _HAS_FLUENT:
+            dialog = _ProfileNameDialog(self.window())
+            if dialog.exec():
+                return dialog.name_edit.text().strip()
+            return ""
+        # 無 qfluentwidgets 時的後備路徑
+        from PySide6.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getText(self, "儲存為 Profile", "Profile 名稱：")
+        return text.strip() if ok else ""
+
+    def _notify(self, level: str, title: str, content: str) -> None:
+        """透過 NotificationManager 發通知（未注入時靜默略過）。"""
+        if self._notification_manager is None:
+            return
+        try:
+            getattr(self._notification_manager, level)(title, content)
+        except Exception:
+            pass
 
     def _on_start(self) -> None:
         """全部轉換按鈕點擊：啟動 Controller 並更新 ProgressWidget。"""
@@ -479,3 +609,29 @@ class HomePage(BasePage):
         local_now = datetime.now().astimezone()
         local_today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         return local_today_start.astimezone(timezone.utc).isoformat()
+
+
+if _HAS_FLUENT:
+
+    class _ProfileNameDialog(MessageBoxBase):
+        """Profile 命名對話框（Fluent 風格，Enter 確認）。"""
+
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self.title_label = SubtitleLabel("儲存為 Profile", self)
+            self.name_edit = LineEdit(self)
+            self.name_edit.setPlaceholderText("輸入 Profile 名稱（同名會覆蓋）")
+            self.name_edit.setClearButtonEnabled(True)
+
+            self.viewLayout.addWidget(self.title_label)
+            self.viewLayout.addWidget(self.name_edit)
+
+            self.yesButton.setText("儲存")
+            self.cancelButton.setText("取消")
+            self.widget.setMinimumWidth(360)
+
+            # 空名稱時禁用儲存鈕
+            self.yesButton.setEnabled(False)
+            self.name_edit.textChanged.connect(
+                lambda text: self.yesButton.setEnabled(bool(text.strip()))
+            )
