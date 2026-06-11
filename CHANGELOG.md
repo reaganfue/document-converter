@@ -4,6 +4,26 @@
 
 ---
 
+## [2.2.0] - 2026-06-11
+
+### 新增
+
+- **掃描版 PDF OCR**（`converters/pdf_ocr.py`）：PDF 轉 TXT / MD / HTML 時，無文字層的頁面自動以 RapidOCR（onnxruntime 後端）辨識文字
+  - 完全離線：OCR 模型（~15MB）隨 pip 套件內建，無需安裝 Tesseract 等系統程式
+  - 有文字層的頁面永遠走原生抽取，OCR 只作為掃描頁後備，不影響一般 PDF 的速度與精確度
+  - 支援繁中 / 簡中 / 英文混排
+- **轉換 Profile**：首頁新增 Profile 下拉與儲存/刪除按鈕，一鍵套用具名的「目標格式 + 輸出目錄 + 覆寫」組合（QSettings 持久化）
+
+### 改善
+
+- **打包體積瘦身（~1.1GB → ~600MB）**：rembg AI 去背模型（~525MB）不再內嵌 exe，改為首次使用去背時自動下載至 `~/.u2net/`，UI 同步提示下載狀態；離線部署可把 `u2net_models/` 資料夾放到 exe 同目錄
+- windowed 模式（pythonw / 打包 exe）下墊底 `sys.stdout/stderr`，防止第三方下載進度條（tqdm）使應用崩潰
+
+### 技術細節
+
+- 新依賴：`rapidocr-onnxruntime>=1.2,<2.0`（複用既有 onnxruntime）
+- 新增 22 個測試（Profile CRUD 12 + 模型解析 5 + OCR 端到端 5），總計 176 passed
+
 ## [2.1.0] - 2026-06-09
 
 ### 新增

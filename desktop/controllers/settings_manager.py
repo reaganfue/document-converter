@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 from PySide6.QtCore import QObject, QSettings
 
-from desktop.interfaces import SettingsManagerSignals
+from desktop.interfaces import SUPPORTED_OUTPUT_FORMATS, SettingsManagerSignals
 from desktop.utils.paths import get_default_output_dir
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,9 @@ DEFAULTS: dict[str, Any] = {
     "enable_com_fallback": True,          # CEO Q4：COM 降級 (docx2pdf)
     "temp_dir": "",
     "log_level": "INFO",
+
+    # === 轉換 Profile（具名的「目標格式+輸出目錄+覆寫」組合，JSON 字串存儲） ===
+    "profiles": "[]",
 }
 
 # QSettings 後端使用的 org / app 名稱（與 theme.py 保持一致）
@@ -94,15 +97,21 @@ class SettingsManager(QObject):
         exported(str)                   匯出的檔案路徑字串
     """
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QObject] = None,
+        qsettings: Optional[QSettings] = None,
+    ) -> None:
         """初始化 SettingsManager，載入所有 QSettings 到記憶體快取。
 
         Args:
-            parent: Qt 父物件（通常是 MainWindowV2）。
+            parent:    Qt 父物件（通常是 MainWindowV2）。
+            qsettings: 自訂 QSettings 後端（測試隔離用；None 時使用
+                       Registry 中的 DocConverter 正式儲存區）。
         """
         super().__init__(parent)
         self.signals = SettingsManagerSignals()
-        self._qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+        self._qs = qsettings if qsettings is not None else QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
         self._cache: dict[str, Any] = {}
         self._load_all()
         logger.debug(
@@ -259,6 +268,81 @@ class SettingsManager(QObject):
         logger.info("設定已從 %s 匯入（%d/%d 個鍵）", path, count, len(raw_data))
         self.signals.imported.emit(count)
         return count
+
+    # =========================================================================
+    # 轉換 Profile（具名的「目標格式 + 輸出目錄 + 覆寫」組合）
+    # =========================================================================
+
+    def get_profiles(self) -> list[dict[str, Any]]:
+        """取得所有轉換 Profile（依名稱排序）。
+
+        儲存格式為 "profiles" 鍵下的 JSON 字串；解析失敗（壞資料）
+        或結構非 list 時回傳空清單，不拋例外。
+
+        Returns:
+            list[dict]，每個 dict 含 name / target_format / output_dir / overwrite。
+        """
+        raw = self.get("profiles", "[]")
+        try:
+            data = json.loads(str(raw))
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("profiles 設定值非合法 JSON，回傳空清單（raw=%r）", raw)
+            return []
+        if not isinstance(data, list):
+            return []
+        valid = [p for p in data if self._is_valid_profile(p)]
+        return sorted(valid, key=lambda p: str(p["name"]))
+
+    def save_profile(self, profile: dict[str, Any]) -> None:
+        """儲存一個 Profile（同名覆蓋）。
+
+        Args:
+            profile: 必含 name(非空 str) / target_format(SUPPORTED_OUTPUT_FORMATS 之一)，
+                     可選 output_dir(str，空 = 用全域) / overwrite(bool)。
+
+        Raises:
+            ValueError: profile 結構不合法。
+        """
+        normalized = {
+            "name": str(profile.get("name", "")).strip(),
+            "target_format": str(profile.get("target_format", "")).lower(),
+            "output_dir": str(profile.get("output_dir", "")),
+            "overwrite": bool(profile.get("overwrite", False)),
+        }
+        if not self._is_valid_profile(normalized):
+            raise ValueError(f"Profile 結構不合法：{profile!r}")
+
+        profiles = [p for p in self.get_profiles() if p["name"] != normalized["name"]]
+        profiles.append(normalized)
+        self.set("profiles", json.dumps(profiles, ensure_ascii=False))
+        logger.info("Profile 已儲存：%r（共 %d 個）", normalized["name"], len(profiles))
+
+    def delete_profile(self, name: str) -> bool:
+        """刪除指定名稱的 Profile。
+
+        Args:
+            name: Profile 名稱。
+
+        Returns:
+            True 表示有刪除；False 表示找不到該名稱。
+        """
+        profiles = self.get_profiles()
+        remaining = [p for p in profiles if p["name"] != name]
+        if len(remaining) == len(profiles):
+            return False
+        self.set("profiles", json.dumps(remaining, ensure_ascii=False))
+        logger.info("Profile 已刪除：%r（剩 %d 個）", name, len(remaining))
+        return True
+
+    @staticmethod
+    def _is_valid_profile(p: Any) -> bool:
+        """檢查 profile dict 結構合法性（name 非空 + 格式在支援清單中）。"""
+        return (
+            isinstance(p, dict)
+            and isinstance(p.get("name"), str)
+            and bool(p["name"].strip())
+            and p.get("target_format") in SUPPORTED_OUTPUT_FORMATS
+        )
 
     # =========================================================================
     # 便利屬性（型別安全存取）

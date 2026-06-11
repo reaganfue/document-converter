@@ -35,6 +35,7 @@ from converters.image_tools import (
     batch_process,
     feather_edges,
     get_image_info,
+    is_model_available,
     remove_background,
     replace_background,
     sharpen_image,
@@ -275,6 +276,19 @@ class ImageToolsController(QObject):
         logger.info("image_tools: 啟動 %s worker", operation_name)
         self._thread_pool.start(worker)
 
+    def _warn_if_model_missing(self, model: str) -> None:
+        """模型檔尚未下載時發出 model_download_required，讓 UI 提示使用者。
+
+        實際下載由 rembg 在 worker 執行緒首次 new_session 時自動進行
+        （阻塞該 worker，不阻塞 UI），這裡只負責「告知會變慢」。
+        """
+        try:
+            if not is_model_available(model):
+                logger.info("模型 %r 尚未下載，首次使用將自動下載（~175MB）", model)
+                self.signals.model_download_required.emit(model)
+        except Exception:
+            pass  # 提示失敗不影響主流程
+
     # -------------------------------------------------------------------------
     # 公開操作方法
     # -------------------------------------------------------------------------
@@ -299,10 +313,12 @@ class ImageToolsController(QObject):
                              "post_process_feather": float, # 邊緣羽化 0.0-10.0
                          }
         """
+        model = options.get("model", DEFAULT_MODEL)
+        self._warn_if_model_missing(model)
         kwargs: dict[str, Any] = {
             "input_path": input_path,
             "output_path": output_path,
-            "model": options.get("model", DEFAULT_MODEL),
+            "model": model,
             "alpha_matting": bool(options.get("alpha_matting", False)),
             "post_process_sharpen": int(options.get("post_process_sharpen", 0)),
             "post_process_feather": float(options.get("post_process_feather", 0.0)),
@@ -331,6 +347,7 @@ class ImageToolsController(QObject):
                              "avoid_overwrite": bool,  # 同名時加序號
                          }
         """
+        self._warn_if_model_missing(settings.get("model", DEFAULT_MODEL))
         kwargs: dict[str, Any] = {
             "input_paths": input_paths,
             "output_dir": output_dir,

@@ -22,6 +22,9 @@ html2text==2024.2.26
 # ===== Image =====
 Pillow>=12.0,<13.0
 
+# ===== OCR（掃描版 PDF 文字辨識，RapidOCR + onnxruntime） =====
+rapidocr-onnxruntime>=1.2,<2.0
+
 # ===== Image Tools (rembg + onnxruntime CPU 後端) =====
 # W-IMAGE-TOOLS: 自動去背 / 背景替換 / 銳化羽化分頁
 # 注意：rembg 強制 Pillow >= 12，故 Pillow 已由 10.4 升至 12.x

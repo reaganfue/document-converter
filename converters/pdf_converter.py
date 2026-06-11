@@ -3,6 +3,7 @@ converters/pdf_converter.py — PDF 來源轉換器
 
 支援：PDF → DOCX / HTML / MD / TXT / IMG
 首選引擎：PyMuPDF (fitz) + pdf2docx
+掃描版後備：頁面無文字層時自動 OCR（converters/pdf_ocr.py，RapidOCR）
 """
 
 import io
@@ -12,6 +13,7 @@ from pathlib import Path
 
 from .base import BaseConverter
 from .exceptions import ConversionError, UnsupportedFormatError
+from .pdf_ocr import is_ocr_available, ocr_page
 from .utils import build_minimal_html, ensure_output_dir
 
 logger = logging.getLogger(__name__)
@@ -116,10 +118,16 @@ class PDFConverter(BaseConverter):
             pdf_doc = fitz.open(str(input_path))
             html_parts: list[str] = []
             try:
-                for page in pdf_doc:
-                    html_parts.append(
-                        f'<div class="pdf-page">{page.get_text("html")}</div>'
-                    )
+                for page_num, page in enumerate(pdf_doc, start=1):
+                    text, used_ocr = self._page_text_or_ocr(page)
+                    if used_ocr:
+                        # 掃描圖頁：OCR 純文字以 <pre> 呈現
+                        import html as html_module
+                        logger.info("PDF→HTML 第 %d 頁無文字層，已使用 OCR 辨識", page_num)
+                        page_body = f"<pre>{html_module.escape(text)}</pre>"
+                    else:
+                        page_body = page.get_text("html")
+                    html_parts.append(f'<div class="pdf-page">{page_body}</div>')
             finally:
                 pdf_doc.close()
 
@@ -157,8 +165,14 @@ class PDFConverter(BaseConverter):
             converter.body_width = 0  # 不自動換行
             try:
                 for page_num, page in enumerate(pdf_doc, start=1):
-                    page_html = page.get_text("html")
-                    page_md = converter.handle(page_html)
+                    text, used_ocr = self._page_text_or_ocr(page)
+                    if used_ocr:
+                        # 掃描圖頁：OCR 純文字直接作為該頁內容
+                        logger.info("PDF→MD 第 %d 頁無文字層，已使用 OCR 辨識", page_num)
+                        page_md = text
+                    else:
+                        page_html = page.get_text("html")
+                        page_md = converter.handle(page_html)
                     md_parts.append(f"---\n\n<!-- 第 {page_num} 頁 -->\n\n{page_md}")
             finally:
                 pdf_doc.close()
@@ -234,14 +248,31 @@ class PDFConverter(BaseConverter):
     # ─── 共用輔助 ──────────────────────────────────────────────────
 
     def _extract_text(self, input_path: Path) -> str:
-        """用 PyMuPDF 抽取所有頁面純文字。"""
+        """用 PyMuPDF 抽取所有頁面純文字（無文字層頁面自動 OCR）。"""
         import fitz
 
         pdf_doc = fitz.open(str(input_path))
         texts: list[str] = []
         try:
-            for page in pdf_doc:
-                texts.append(page.get_text())
+            for page_num, page in enumerate(pdf_doc, start=1):
+                text, used_ocr = self._page_text_or_ocr(page)
+                if used_ocr:
+                    logger.info("PDF 第 %d 頁無文字層，已使用 OCR 辨識", page_num)
+                texts.append(text)
         finally:
             pdf_doc.close()
         return "\n".join(texts)
+
+    @staticmethod
+    def _page_text_or_ocr(page) -> tuple[str, bool]:
+        """回傳 (頁面文字, 是否來自 OCR)。
+
+        原生文字層優先（快且精確）；頁面抽不到文字（掃描圖頁）
+        且 OCR 引擎可用時，降級為 RapidOCR 辨識。
+        """
+        text = page.get_text()
+        if text.strip():
+            return text, False
+        if is_ocr_available():
+            return ocr_page(page), True
+        return text, False

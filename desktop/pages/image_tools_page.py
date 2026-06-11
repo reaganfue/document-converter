@@ -207,6 +207,7 @@ class ImageToolsPage(BasePage):
         sig.item_completed.connect(self._on_item_completed)
         sig.operation_completed.connect(self._on_operation_completed)
         sig.operation_failed.connect(self._on_operation_failed)
+        sig.model_download_required.connect(self._on_model_download_required)
 
         # 把 controller 傳給各 Tab
         for tab in (self._single_tab, self._batch_tab, self._replace_tab, self._filter_tab):
@@ -292,6 +293,16 @@ class ImageToolsPage(BasePage):
         if error_message != "已取消":
             _show_info_bar(self, "error", "操作失敗", error_message)
         logger.warning("image_tools 操作失敗: %s — %s", operation_name, error_message)
+
+    def _on_model_download_required(self, model: str) -> None:
+        """模型尚未下載：提示首次使用會自動下載，處理會比平常久。"""
+        _show_info_bar(
+            self,
+            "info",
+            "首次使用此 AI 模型",
+            f"正在自動下載 {model} 模型（約 175MB），完成後自動開始處理，請耐心等候…",
+        )
+        logger.info("image_tools: 模型 %r 缺失，等待自動下載", model)
 
     # -------------------------------------------------------------------------
     # 快捷鍵
