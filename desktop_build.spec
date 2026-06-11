@@ -7,7 +7,7 @@
 產物位於：dist/文件轉檔/文件轉檔.exe
 """
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -24,6 +24,9 @@ datas = [
     # 模型由應用首次使用去背時自動下載至 ~/.u2net/（瘦身 ~1.1GB → ~550MB）。
     # 離線部署：把 u2net_models/ 資料夾放到 exe 同目錄即可（resolve_model_dir 會優先讀取）。
 ]
+
+# RapidOCR（掃描版 PDF 文字辨識）：套件內建 OCR 模型（~15MB）與 config.yaml 必須隨包
+datas += collect_data_files('rapidocr_onnxruntime')
 
 # ─────────────────────────────────────────────
 # Hidden imports — PyInstaller 靜態分析可能漏掉的模組
@@ -160,6 +163,14 @@ hiddenimports = [
     'sqlite3',
     'csv',
     'json',
+
+    # ── OCR（掃描版 PDF，RapidOCR） ──
+    'rapidocr_onnxruntime',
+    'cv2',
+    'pyclipper',
+    'shapely',
+    'shapely.geometry',
+    'yaml',
 
     # ── W-IMAGE-TOOLS: rembg / onnxruntime / 影像處理 ──
     'rembg',
