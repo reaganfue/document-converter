@@ -2,7 +2,7 @@
 converters/dispatcher.py — 轉換路由引擎
 
 根據 (source_format, target_format) 選擇正確的 Converter 實例，
-並提供 convert_file 作為 Flask app 呼叫的唯一公開入口。
+並提供 convert_file 作為桌面控制層（ConversionController）呼叫的唯一公開入口。
 """
 
 import logging
@@ -49,7 +49,7 @@ def convert_file(
     source_format: str,
     target_format: str,
 ) -> None:
-    """執行單一檔案轉換（Flask app 的主呼叫入口）。
+    """執行單一檔案轉換（桌面應用的主呼叫入口）。
 
     Args:
         input_path: 來源檔案路徑

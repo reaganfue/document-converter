@@ -409,7 +409,7 @@ def get_renderer() -> PDFRenderer:
     """取得全域 PDFRenderer 單例（執行緒安全）。
 
     使用 double-checked locking + threading.Lock 保護，
-    確保 Flask 多執行緒環境下不會建立多個實例。
+    確保多執行緒環境（QThreadPool worker）下不會建立多個實例。
 
     Returns:
         PDFRenderer 實例（懶建立，多次呼叫回傳同一物件）

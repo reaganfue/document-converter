@@ -46,6 +46,11 @@ dist/
 # CEO system state — not part of source code
 .execution/
 
+# AI assistant working files — not part of source code
+error-knowledge/
+plans/
+.archive/
+
 # Claude Code agent memory — private AI assistant state
 .claude/
 

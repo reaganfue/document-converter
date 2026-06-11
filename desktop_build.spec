@@ -48,11 +48,11 @@ hiddenimports = [
     'converters.txt_converter',
     'converters.image_converter',
     'converters.image_tools',
+    'converters.pdf_tools',
 
     # ── desktop 套件 ──
     'desktop',
     'desktop.main',
-    'desktop.main_window',
     'desktop.interfaces',
     'desktop.utils',
     'desktop.utils.theme',
@@ -62,7 +62,7 @@ hiddenimports = [
     'desktop.widgets.file_card',
     'desktop.widgets.format_selector',
     'desktop.widgets.progress_widget',
-    'desktop.widgets.settings_dialog',
+    'desktop.widgets.close_choice_dialog',
     'desktop.controllers',
     'desktop.controllers.conversion_controller',
     'desktop.controllers.job_manager',
@@ -71,6 +71,7 @@ hiddenimports = [
     'desktop.controllers.history_manager',
     'desktop.controllers.tray_manager',
     'desktop.controllers.image_tools_controller',
+    'desktop.controllers.pdf_tools_controller',
 
     # ── desktop pages（W-COMMERCIAL 5 分頁） ──
     'desktop.pages',
@@ -83,6 +84,7 @@ hiddenimports = [
     'desktop.pages.components',
     'desktop.pages.components.stats_bar',
     'desktop.pages.image_tools_page',
+    'desktop.pages.pdf_tools_page',
 
     # ── desktop database（SQLite 歷史記錄層） ──
     'desktop.database',
@@ -186,9 +188,10 @@ hiddenimports = [
 # ─────────────────────────────────────────────
 # 排除（減小體積、不需要打包的開發/測試工具）
 # ─────────────────────────────────────────────
+# 注意：scipy 不可放進 excludes — rembg/pymatting 去背功能依賴 scipy.ndimage
 excludes = [
     'tkinter', '_tkinter',
-    'matplotlib', 'scipy', 'numpy.tests',
+    'matplotlib', 'numpy.tests',
     'pytest', 'py', '_pytest',
     'notebook', 'IPython', 'ipykernel',
     'flask', 'jinja2', 'werkzeug',
