@@ -4,6 +4,35 @@
 
 ---
 
+## [2.1.0] - 2026-06-09
+
+### 新增
+
+- **PDF 工具頁**：合併 / 分割 / 壓縮 / 加密解密，以及點擊即編輯的 PDF 文字編輯（含預覽與視窗縮放）
+- **圖片工具頁**：rembg AI 自動去背、背景替換、邊緣銳化羽化（4-tab UI；模型可由 `scripts/predownload_models.py` 預下載）
+- **歷史頁**：轉換記錄持久化（SQLite）+ 一鍵重新轉換；每日統計跨重啟保留
+- **系統整合**：系統托盤常駐、關閉行為詢問對話框、單實例鎖（重複啟動喚起既有視窗）
+- **Nordic Design System**：暗色/亮色雙主題，DropZone / FileCard / ProgressWidget 全面重構
+
+### 改善
+
+- `start.bat` 改以 `pythonw.exe` detached 啟動，不再殘留黑色 console 視窗
+- 設定頁由彈出對話框改為嵌入式全頁面，設定項即時儲存（Windows 11 Settings 慣例）
+- PyInstaller 打包（`desktop_build.spec` + `build.bat`）：onedir 模式產出 portable exe
+
+## [2.0.0] - 2026-04-25
+
+### 變更（重大）
+
+- **架構全面遷移**：Flask Web 應用（瀏覽器 UI + localhost:5000）→ PySide6 桌面應用（QFluentWidgets，Windows 11 Fluent Design 風格）
+- UI 改為 MSFluentWindow 多分頁導航；轉換改由 QThreadPool 非同步執行
+- 轉換業務層（`converters/`）完整保留，僅替換呼叫端
+
+### 移除
+
+- Flask / Werkzeug 依賴、Web 模板（`templates/`）與前端資源（`static/`）
+- uploads/outputs TTL 清理機制（桌面版直接輸出至使用者指定目錄）
+
 ## [1.1.0] - 2026-04-24
 
 ### 新增
